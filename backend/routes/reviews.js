@@ -63,8 +63,12 @@ reviewsRouter.get('/', optionalAuth, commonValidation.pagination, handleValidati
             ${whereClause}
         `;
 
-        const reviews = await query(reviewsSql, [...params, limit, offset]);
-        const countResult = await query(countSql, params);
+        // Add pagination parameters
+        const reviewsParams = [...params, limit, offset];
+        const countParams = [...params];
+
+        const reviews = await query(reviewsSql, reviewsParams);
+        const countResult = await query(countSql, countParams);
         const total = countResult[0].total;
 
         res.status(200).json({

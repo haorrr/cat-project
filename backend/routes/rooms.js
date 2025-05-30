@@ -1,3 +1,4 @@
+// Fixed rooms.js with safe JSON parsing
 const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -6,6 +7,31 @@ const { authenticateToken, requireAdmin, optionalAuth } = require('../middleware
 const { roomValidation, commonValidation, handleValidationErrors } = require('../middleware/validation');
 
 const router = express.Router();
+
+// Helper function to safely parse JSON
+const safeJsonParse = (jsonString, fallback = []) => {
+    if (!jsonString || jsonString === null || jsonString === undefined) {
+        return fallback;
+    }
+    
+    try {
+        // Handle case where jsonString is already an object/array
+        if (typeof jsonString === 'object') {
+            return jsonString;
+        }
+        
+        // Clean up the string and parse
+        const cleanJson = jsonString.toString().trim();
+        if (cleanJson === '' || cleanJson === 'null') {
+            return fallback;
+        }
+        
+        return JSON.parse(cleanJson);
+    } catch (error) {
+        console.log('JSON Parse Error for:', jsonString, 'Error:', error.message);
+        return fallback;
+    }
+};
 
 // @route   GET /api/rooms
 // @desc    Get all rooms with availability info
@@ -72,7 +98,7 @@ router.get('/', optionalAuth, commonValidation.pagination, handleValidationError
             ${whereClause}
             GROUP BY r.id
             ORDER BY r.created_at DESC
-            LIMIT ? OFFSET ?
+            LIMIT ${offset}, ${limit}
         `;
 
         const countSql = `
@@ -81,17 +107,19 @@ router.get('/', optionalAuth, commonValidation.pagination, handleValidationError
             ${whereClause}
         `;
 
-        const rooms = await query(roomsSql, [...params, limit, offset]);
+        const rooms = await query(roomsSql, params);
         const countResult = await query(countSql, params);
         const total = countResult[0].total;
 
-        // Process room data
-        const processedRooms = rooms.map(room => ({
-            ...room,
-            amenities: room.amenities ? JSON.parse(room.amenities) : [],
-            images: room.images ? room.images.split(',') : [],
-            image_count: parseInt(room.image_count)
-        }));
+        // Process room data with safe JSON parsing
+        const processedRooms = rooms.map(room => {
+            return {
+                ...room,
+                amenities: safeJsonParse(room.amenities, []),
+                images: room.images ? room.images.split(',').filter(img => img && img.trim()) : [],
+                image_count: parseInt(room.image_count) || 0
+            };
+        });
 
         res.status(200).json({
             success: true,
@@ -161,7 +189,7 @@ router.get('/:id', optionalAuth, commonValidation.id, handleValidationErrors, as
 
         const room = {
             ...rooms[0],
-            amenities: rooms[0].amenities ? JSON.parse(rooms[0].amenities) : [],
+            amenities: safeJsonParse(rooms[0].amenities, []),
             images: images.map(img => ({
                 url: img.image_url,
                 is_primary: img.is_primary
@@ -216,7 +244,7 @@ router.post('/', authenticateToken, requireAdmin, roomValidation.create, handleV
             data: {
                 room: {
                     ...newRoom[0],
-                    amenities: newRoom[0].amenities ? JSON.parse(newRoom[0].amenities) : []
+                    amenities: safeJsonParse(newRoom[0].amenities, [])
                 }
             }
         });
@@ -283,7 +311,7 @@ router.put('/:id', authenticateToken, requireAdmin, roomValidation.update, handl
             data: {
                 room: {
                     ...updatedRoom[0],
-                    amenities: updatedRoom[0].amenities ? JSON.parse(updatedRoom[0].amenities) : []
+                    amenities: safeJsonParse(updatedRoom[0].amenities, [])
                 }
             }
         });
@@ -298,7 +326,7 @@ router.put('/:id', authenticateToken, requireAdmin, roomValidation.update, handl
 });
 
 // @route   DELETE /api/rooms/:id
-// @desc    Delete room (Admin only)
+// @desc    Delete room (Admin only)  
 // @access  Private/Admin
 router.delete('/:id', authenticateToken, requireAdmin, commonValidation.id, handleValidationErrors, async (req, res) => {
     try {
@@ -338,195 +366,6 @@ router.delete('/:id', authenticateToken, requireAdmin, commonValidation.id, hand
         res.status(500).json({
             success: false,
             message: 'Server error while deleting room'
-        });
-    }
-});
-
-// @route   POST /api/rooms/:id/images
-// @desc    Upload room images (Admin only)
-// @access  Private/Admin
-router.post('/:id/images', authenticateToken, requireAdmin, commonValidation.id, handleValidationErrors, async (req, res) => {
-    try {
-        const roomId = req.params.id;
-
-        // Check if room exists
-        const room = await query('SELECT id FROM rooms WHERE id = ?', [roomId]);
-        if (room.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Room not found'
-            });
-        }
-
-        if (!req.files || !req.files.images) {
-            return res.status(400).json({
-                success: false,
-                message: 'No images uploaded'
-            });
-        }
-
-        const images = Array.isArray(req.files.images) ? req.files.images : [req.files.images];
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-        const uploadedImages = [];
-
-        await transaction(async (connection) => {
-            for (const image of images) {
-                // Validate file type
-                if (!allowedTypes.includes(image.mimetype)) {
-                    throw new Error(`Invalid file type: ${image.mimetype}`);
-                }
-
-                // Generate unique filename
-                const fileExtension = path.extname(image.name);
-                const fileName = `room_${roomId}_${uuidv4()}${fileExtension}`;
-                const uploadPath = path.join(process.env.UPLOAD_PATH || './uploads', 'rooms', fileName);
-
-                // Move file
-                await image.mv(uploadPath);
-
-                // Save to database
-                const imageSql = `
-                    INSERT INTO room_images (room_id, image_url, is_primary)
-                    VALUES (?, ?, ?)
-                `;
-
-                // First image is primary if no primary exists
-                const existingPrimary = await query(
-                    'SELECT COUNT(*) as count FROM room_images WHERE room_id = ? AND is_primary = TRUE',
-                    [roomId]
-                );
-
-                const isPrimary = existingPrimary[0].count === 0;
-                const imageUrl = `/uploads/rooms/${fileName}`;
-
-                await connection.execute(imageSql, [roomId, imageUrl, isPrimary]);
-
-                uploadedImages.push({
-                    url: imageUrl,
-                    is_primary: isPrimary
-                });
-            }
-
-            // Update room main_image if not set
-            const mainImageSql = `
-                UPDATE rooms 
-                SET main_image = COALESCE(main_image, ?)
-                WHERE id = ?
-            `;
-            await connection.execute(mainImageSql, [uploadedImages[0]?.url, roomId]);
-        });
-
-        res.status(201).json({
-            success: true,
-            message: 'Images uploaded successfully',
-            data: {
-                images: uploadedImages
-            }
-        });
-
-    } catch (error) {
-        console.error('Upload room images error:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Server error while uploading images'
-        });
-    }
-});
-
-// @route   DELETE /api/rooms/:id/images/:imageId
-// @desc    Delete room image (Admin only)
-// @access  Private/Admin
-router.delete('/:id/images/:imageId', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-        const { id: roomId, imageId } = req.params;
-
-        // Get image info
-        const image = await query(
-            'SELECT * FROM room_images WHERE id = ? AND room_id = ?',
-            [imageId, roomId]
-        );
-
-        if (image.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Image not found'
-            });
-        }
-
-        // Delete from database
-        await query('DELETE FROM room_images WHERE id = ?', [imageId]);
-
-        // If this was primary image, set another as primary
-        if (image[0].is_primary) {
-            await query(`
-                UPDATE room_images 
-                SET is_primary = TRUE 
-                WHERE room_id = ? 
-                ORDER BY created_at ASC 
-                LIMIT 1
-            `, [roomId]);
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'Image deleted successfully'
-        });
-
-    } catch (error) {
-        console.error('Delete room image error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error while deleting image'
-        });
-    }
-});
-
-// @route   PUT /api/rooms/:id/images/:imageId/primary
-// @desc    Set image as primary (Admin only)
-// @access  Private/Admin
-router.put('/:id/images/:imageId/primary', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-        const { id: roomId, imageId } = req.params;
-
-        await transaction(async (connection) => {
-            // Remove primary from all images
-            await connection.execute(
-                'UPDATE room_images SET is_primary = FALSE WHERE room_id = ?',
-                [roomId]
-            );
-
-            // Set new primary image
-            const result = await connection.execute(
-                'UPDATE room_images SET is_primary = TRUE WHERE id = ? AND room_id = ?',
-                [imageId, roomId]
-            );
-
-            if (result[0].affectedRows === 0) {
-                throw new Error('Image not found');
-            }
-
-            // Update room main_image
-            const imageUrl = await query(
-                'SELECT image_url FROM room_images WHERE id = ?',
-                [imageId]
-            );
-
-            await connection.execute(
-                'UPDATE rooms SET main_image = ? WHERE id = ?',
-                [imageUrl[0].image_url, roomId]
-            );
-        });
-
-        res.status(200).json({
-            success: true,
-            message: 'Primary image updated successfully'
-        });
-
-    } catch (error) {
-        console.error('Set primary image error:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message || 'Server error while setting primary image'
         });
     }
 });

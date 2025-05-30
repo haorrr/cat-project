@@ -54,7 +54,7 @@ newsRouter.get('/', optionalAuth, commonValidation.pagination, handleValidationE
             JOIN users u ON n.author_id = u.id
             ${whereClause}
             ORDER BY n.published_at DESC, n.created_at DESC
-            LIMIT ? OFFSET ?
+            LIMIT ${offset}, ${limit}
         `;
 
         const countSql = `

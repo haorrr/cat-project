@@ -41,7 +41,7 @@ foodRouter.get('/', optionalAuth, commonValidation.pagination, handleValidationE
             FROM foods
             ${whereClause}
             ORDER BY category ASC, brand ASC, name ASC
-            LIMIT ? OFFSET ?
+            LIMIT ${offset}, ${limit}
         `;
 
         const countSql = `

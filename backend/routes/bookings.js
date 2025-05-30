@@ -80,7 +80,7 @@ router.get('/', authenticateToken, commonValidation.pagination, handleValidation
             JOIN rooms r ON b.room_id = r.id
             ${whereClause}
             ORDER BY b.created_at DESC
-            LIMIT ? OFFSET ?
+            LIMIT ${offset}, ${limit}
         `;
 
         const countSql = `

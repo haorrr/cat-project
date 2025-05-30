@@ -67,7 +67,7 @@ router.get('/', authenticateToken, commonValidation.pagination, handleValidation
             JOIN users u ON c.user_id = u.id
             ${whereClause}
             ORDER BY c.created_at DESC
-            LIMIT ? OFFSET ?
+            LIMIT ${offset}, ${limit}
         `;
 
         const countSql = `

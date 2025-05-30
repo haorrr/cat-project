@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const { query } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { userValidation, commonValidation, handleValidationErrors } = require('../middleware/validation');
+const { body } = require('express-validator');
 
 const router = express.Router();
 

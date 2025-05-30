@@ -56,7 +56,7 @@ router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, ha
             JOIN bookings b ON p.booking_id = b.id
             ${whereClause}
             ORDER BY p.created_at DESC
-            LIMIT ? OFFSET ?
+            LIMIT ${offset}, ${limit}
         `;
 
         const countSql = `
