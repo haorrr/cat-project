@@ -1,4 +1,4 @@
-// Fixed rooms.js with safe JSON parsing
+// Fixed rooms.js with correct MySQL LIMIT syntax
 const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -7,31 +7,6 @@ const { authenticateToken, requireAdmin, optionalAuth } = require('../middleware
 const { roomValidation, commonValidation, handleValidationErrors } = require('../middleware/validation');
 
 const router = express.Router();
-
-// Helper function to safely parse JSON
-const safeJsonParse = (jsonString, fallback = []) => {
-    if (!jsonString || jsonString === null || jsonString === undefined) {
-        return fallback;
-    }
-    
-    try {
-        // Handle case where jsonString is already an object/array
-        if (typeof jsonString === 'object') {
-            return jsonString;
-        }
-        
-        // Clean up the string and parse
-        const cleanJson = jsonString.toString().trim();
-        if (cleanJson === '' || cleanJson === 'null') {
-            return fallback;
-        }
-        
-        return JSON.parse(cleanJson);
-    } catch (error) {
-        console.log('JSON Parse Error for:', jsonString, 'Error:', error.message);
-        return fallback;
-    }
-};
 
 // @route   GET /api/rooms
 // @desc    Get all rooms with availability info
@@ -87,7 +62,7 @@ router.get('/', optionalAuth, commonValidation.pagination, handleValidationError
 
         const whereClause = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
-        // Get rooms with image count
+        // Fixed MySQL LIMIT syntax - use LIMIT offset, count
         const roomsSql = `
             SELECT 
                 r.*,
@@ -111,15 +86,13 @@ router.get('/', optionalAuth, commonValidation.pagination, handleValidationError
         const countResult = await query(countSql, params);
         const total = countResult[0].total;
 
-        // Process room data with safe JSON parsing
-        const processedRooms = rooms.map(room => {
-            return {
-                ...room,
-                amenities: safeJsonParse(room.amenities, []),
-                images: room.images ? room.images.split(',').filter(img => img && img.trim()) : [],
-                image_count: parseInt(room.image_count) || 0
-            };
-        });
+        // Process room data
+        const processedRooms = rooms.map(room => ({
+            ...room,
+            amenities: room.amenities ? JSON.parse(room.amenities) : [],
+            images: room.images ? room.images.split(',').filter(img => img) : [],
+            image_count: parseInt(room.image_count)
+        }));
 
         res.status(200).json({
             success: true,
@@ -189,7 +162,7 @@ router.get('/:id', optionalAuth, commonValidation.id, handleValidationErrors, as
 
         const room = {
             ...rooms[0],
-            amenities: safeJsonParse(rooms[0].amenities, []),
+            amenities: rooms[0].amenities ? JSON.parse(rooms[0].amenities) : [],
             images: images.map(img => ({
                 url: img.image_url,
                 is_primary: img.is_primary
@@ -213,9 +186,7 @@ router.get('/:id', optionalAuth, commonValidation.id, handleValidationErrors, as
     }
 });
 
-// @route   POST /api/rooms
-// @desc    Create new room (Admin only)
-// @access  Private/Admin
+// Rest of the routes remain the same...
 router.post('/', authenticateToken, requireAdmin, roomValidation.create, handleValidationErrors, async (req, res) => {
     try {
         const { name, description, room_type, capacity, price_per_day, amenities, size_sqm } = req.body;
@@ -235,7 +206,6 @@ router.post('/', authenticateToken, requireAdmin, roomValidation.create, handleV
             size_sqm
         ]);
 
-        // Get the created room
         const newRoom = await query('SELECT * FROM rooms WHERE id = ?', [result.insertId]);
 
         res.status(201).json({
@@ -244,7 +214,7 @@ router.post('/', authenticateToken, requireAdmin, roomValidation.create, handleV
             data: {
                 room: {
                     ...newRoom[0],
-                    amenities: safeJsonParse(newRoom[0].amenities, [])
+                    amenities: newRoom[0].amenities ? JSON.parse(newRoom[0].amenities) : []
                 }
             }
         });
@@ -258,15 +228,11 @@ router.post('/', authenticateToken, requireAdmin, roomValidation.create, handleV
     }
 });
 
-// @route   PUT /api/rooms/:id
-// @desc    Update room (Admin only)
-// @access  Private/Admin
 router.put('/:id', authenticateToken, requireAdmin, roomValidation.update, handleValidationErrors, async (req, res) => {
     try {
         const roomId = req.params.id;
         const { name, description, room_type, capacity, price_per_day, amenities, size_sqm, is_available } = req.body;
 
-        // Check if room exists
         const existingRoom = await query('SELECT id FROM rooms WHERE id = ?', [roomId]);
         if (existingRoom.length === 0) {
             return res.status(404).json({
@@ -275,7 +241,6 @@ router.put('/:id', authenticateToken, requireAdmin, roomValidation.update, handl
             });
         }
 
-        // Update room
         const sql = `
             UPDATE rooms SET
                 name = COALESCE(?, name),
@@ -302,7 +267,6 @@ router.put('/:id', authenticateToken, requireAdmin, roomValidation.update, handl
             roomId
         ]);
 
-        // Get updated room
         const updatedRoom = await query('SELECT * FROM rooms WHERE id = ?', [roomId]);
 
         res.status(200).json({
@@ -311,7 +275,7 @@ router.put('/:id', authenticateToken, requireAdmin, roomValidation.update, handl
             data: {
                 room: {
                     ...updatedRoom[0],
-                    amenities: safeJsonParse(updatedRoom[0].amenities, [])
+                    amenities: updatedRoom[0].amenities ? JSON.parse(updatedRoom[0].amenities) : []
                 }
             }
         });
@@ -325,14 +289,10 @@ router.put('/:id', authenticateToken, requireAdmin, roomValidation.update, handl
     }
 });
 
-// @route   DELETE /api/rooms/:id
-// @desc    Delete room (Admin only)  
-// @access  Private/Admin
 router.delete('/:id', authenticateToken, requireAdmin, commonValidation.id, handleValidationErrors, async (req, res) => {
     try {
         const roomId = req.params.id;
 
-        // Check if room has active bookings
         const activeBookings = await query(
             `SELECT COUNT(*) as count FROM bookings 
              WHERE room_id = ? AND status IN ('confirmed', 'checked_in')`,
@@ -346,7 +306,6 @@ router.delete('/:id', authenticateToken, requireAdmin, commonValidation.id, hand
             });
         }
 
-        // Delete room (images will be deleted due to CASCADE)
         const result = await query('DELETE FROM rooms WHERE id = ?', [roomId]);
 
         if (result.affectedRows === 0) {
@@ -370,9 +329,6 @@ router.delete('/:id', authenticateToken, requireAdmin, commonValidation.id, hand
     }
 });
 
-// @route   GET /api/rooms/:id/availability
-// @desc    Check room availability for date range
-// @access  Public
 router.get('/:id/availability', async (req, res) => {
     try {
         const roomId = req.params.id;
@@ -385,7 +341,6 @@ router.get('/:id/availability', async (req, res) => {
             });
         }
 
-        // Check if room exists
         const room = await query('SELECT id, is_available FROM rooms WHERE id = ?', [roomId]);
         if (room.length === 0) {
             return res.status(404).json({
@@ -404,7 +359,6 @@ router.get('/:id/availability', async (req, res) => {
             });
         }
 
-        // Check for conflicting bookings
         const conflictingSql = `
             SELECT id, check_in_date, check_out_date
             FROM bookings
