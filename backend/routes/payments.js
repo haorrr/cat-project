@@ -1,6 +1,6 @@
-// routes/payments.js
+// routes/payments.js - FIXED VERSION
 const express = require('express');
-const { query, transaction } = require('../config/database');
+const { query } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { commonValidation, handleValidationErrors } = require('../middleware/validation');
 const { body } = require('express-validator');
@@ -10,7 +10,7 @@ const router = express.Router();
 // @route   GET /api/payments
 // @desc    Get payments (Admin only)
 // @access  Private/Admin
-router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, handleValidationErrors, async (req, res) => {
+router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
@@ -52,8 +52,8 @@ router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, ha
                 b.check_in_date,
                 b.check_out_date
             FROM payments p
-            JOIN users u ON p.user_id = u.id
-            JOIN bookings b ON p.booking_id = b.id
+            LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN bookings b ON p.booking_id = b.id
             ${whereClause}
             ORDER BY p.created_at DESC
             LIMIT ${offset}, ${limit}
@@ -62,12 +62,12 @@ router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, ha
         const countSql = `
             SELECT COUNT(*) as total
             FROM payments p
-            JOIN users u ON p.user_id = u.id
-            JOIN bookings b ON p.booking_id = b.id
+            LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN bookings b ON p.booking_id = b.id
             ${whereClause}
         `;
 
-        const payments = await query(paymentsSql, [...params, limit, offset]);
+        const payments = await query(paymentsSql, params);
         const countResult = await query(countSql, params);
         const total = countResult[0].total;
 
@@ -88,7 +88,8 @@ router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, ha
         console.error('Get payments error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server error while fetching payments'
+            message: 'Server error while fetching payments',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 });
@@ -98,7 +99,14 @@ router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, ha
 // @access  Private (Owner or Admin)
 router.get('/:bookingId', authenticateToken, async (req, res) => {
     try {
-        const bookingId = req.params.bookingId;
+        const bookingId = parseInt(req.params.bookingId);
+
+        if (!bookingId || bookingId <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid booking ID'
+            });
+        }
 
         // Check booking ownership
         const booking = await query('SELECT user_id FROM bookings WHERE id = ?', [bookingId]);
@@ -122,7 +130,7 @@ router.get('/:bookingId', authenticateToken, async (req, res) => {
                 p.*,
                 b.total_price as booking_total
             FROM payments p
-            JOIN bookings b ON p.booking_id = b.id
+            LEFT JOIN bookings b ON p.booking_id = b.id
             WHERE p.booking_id = ?
         `, [bookingId]);
 
@@ -137,7 +145,8 @@ router.get('/:bookingId', authenticateToken, async (req, res) => {
         console.error('Get payment error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server error while fetching payment'
+            message: 'Server error while fetching payment',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 });
@@ -153,52 +162,67 @@ router.post('/', authenticateToken, [
     try {
         const { booking_id, payment_method, amount, transaction_id, notes } = req.body;
 
-        await transaction(async (connection) => {
-            // Verify booking ownership and get details
-            const booking = await connection.execute(
-                'SELECT user_id, total_price, status FROM bookings WHERE id = ?',
-                [booking_id]
-            );
+        // Verify booking ownership and get details
+        const booking = await query(
+            'SELECT user_id, total_price, status FROM bookings WHERE id = ?',
+            [booking_id]
+        );
 
-            if (booking[0].length === 0) {
-                throw new Error('Booking not found');
-            }
+        if (booking.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Booking not found'
+            });
+        }
 
-            const bookingData = booking[0][0];
+        const bookingData = booking[0];
 
-            if (req.user.role !== 'admin' && bookingData.user_id !== req.user.id) {
-                throw new Error('Access denied');
-            }
+        if (req.user.role !== 'admin' && bookingData.user_id !== req.user.id) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied'
+            });
+        }
 
-            // Check if payment already exists
-            const existingPayment = await connection.execute(
-                'SELECT id FROM payments WHERE booking_id = ?',
-                [booking_id]
-            );
+        // Check if payment already exists
+        const existingPayment = await query(
+            'SELECT id FROM payments WHERE booking_id = ?',
+            [booking_id]
+        );
 
-            if (existingPayment[0].length > 0) {
-                throw new Error('Payment already exists for this booking');
-            }
+        if (existingPayment.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: 'Payment already exists for this booking'
+            });
+        }
 
-            // Validate amount
-            if (amount !== bookingData.total_price) {
-                throw new Error('Payment amount does not match booking total');
-            }
+        // Validate amount - FIX: Convert both to numbers for comparison
+        const paymentAmount = parseFloat(amount);
+        const bookingTotal = parseFloat(bookingData.total_price);
 
-            // Create payment record
-            const paymentResult = await connection.execute(`
-                INSERT INTO payments (booking_id, user_id, amount, payment_method, payment_status, transaction_id, payment_date, notes)
-                VALUES (?, ?, ?, ?, 'completed', ?, NOW(), ?)
-            `, [booking_id, req.user.id, amount, payment_method, transaction_id, notes]);
+        console.log('Payment amount:', paymentAmount, 'Booking total:', bookingTotal); // Debug log
 
-            // Update booking status to confirmed
-            await connection.execute(
-                'UPDATE bookings SET status = "confirmed", updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                [booking_id]
-            );
+        if (Math.abs(paymentAmount - bookingTotal) > 0.01) { // Allow small floating point differences
+            return res.status(400).json({
+                success: false,
+                message: `Payment amount (${paymentAmount}) does not match booking total (${bookingTotal})`
+            });
+        }
 
-            return paymentResult[0].insertId;
-        });
+        // Create payment record
+        const paymentResult = await query(`
+            INSERT INTO payments (booking_id, user_id, amount, payment_method, payment_status, transaction_id, payment_date, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'completed', ?, NOW(), ?, NOW(), NOW())
+        `, [booking_id, req.user.id, amount, payment_method, transaction_id || null, notes || null]);
+
+        const paymentId = paymentResult.insertId;
+
+        // Update booking status to confirmed
+        await query(
+            'UPDATE bookings SET status = "confirmed", updated_at = NOW() WHERE id = ?',
+            [booking_id]
+        );
 
         // Get created payment
         const newPayment = await query(`
@@ -206,7 +230,7 @@ router.post('/', authenticateToken, [
                 p.*,
                 b.total_price as booking_total
             FROM payments p
-            JOIN bookings b ON p.booking_id = b.id
+            LEFT JOIN bookings b ON p.booking_id = b.id
             WHERE p.id = ?
         `, [paymentId]);
 
@@ -214,7 +238,13 @@ router.post('/', authenticateToken, [
             success: true,
             message: 'Payment processed successfully',
             data: {
-                payment: newPayment[0]
+                payment: newPayment[0] || {
+                    id: paymentId,
+                    booking_id,
+                    amount,
+                    payment_method,
+                    payment_status: 'completed'
+                }
             }
         });
 
@@ -222,7 +252,8 @@ router.post('/', authenticateToken, [
         console.error('Process payment error:', error);
         res.status(500).json({
             success: false,
-            message: error.message || 'Server error while processing payment'
+            message: error.message || 'Server error while processing payment',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 });
@@ -234,14 +265,51 @@ router.put('/:id/status', authenticateToken, requireAdmin, [
     body('payment_status').isIn(['pending', 'completed', 'failed', 'refunded']).withMessage('Invalid payment status')
 ], handleValidationErrors, async (req, res) => {
     try {
-        const paymentId = req.params.id;
+        const paymentId = parseInt(req.params.id);
         const { payment_status, notes } = req.body;
 
-        const result = await query(`
-            UPDATE payments 
-            SET payment_status = ?, notes = COALESCE(?, notes), updated_at = CURRENT_TIMESTAMP 
-            WHERE id = ?
-        `, [payment_status, notes, paymentId]);
+        if (!paymentId || paymentId <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid payment ID'
+            });
+        }
+
+        // Check if payment exists
+        const existingPayment = await query('SELECT id FROM payments WHERE id = ?', [paymentId]);
+        
+        if (existingPayment.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Payment not found'
+            });
+        }
+
+        // Build update query
+        const updateFields = [];
+        const updateValues = [];
+
+        if (payment_status !== undefined) {
+            updateFields.push('payment_status = ?');
+            updateValues.push(payment_status);
+        }
+        if (notes !== undefined) {
+            updateFields.push('notes = ?');
+            updateValues.push(notes);
+        }
+
+        if (updateFields.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No fields to update'
+            });
+        }
+
+        updateFields.push('updated_at = NOW()');
+        updateValues.push(paymentId);
+
+        const sql = `UPDATE payments SET ${updateFields.join(', ')} WHERE id = ?`;
+        const result = await query(sql, updateValues);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({
@@ -264,10 +332,53 @@ router.put('/:id/status', authenticateToken, requireAdmin, [
         console.error('Update payment status error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server error while updating payment status'
+            message: 'Server error while updating payment status',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// @route   GET /api/payments/user/:userId
+// @desc    Get payments by user (Admin only)
+// @access  Private/Admin
+router.get('/user/:userId', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+
+        if (!userId || userId <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid user ID'
+            });
+        }
+
+        const payments = await query(`
+            SELECT 
+                p.*,
+                b.total_price as booking_total,
+                b.check_in_date,
+                b.check_out_date
+            FROM payments p
+            LEFT JOIN bookings b ON p.booking_id = b.id
+            WHERE p.user_id = ?
+            ORDER BY p.created_at DESC
+        `, [userId]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                payments
+            }
+        });
+
+    } catch (error) {
+        console.error('Get user payments error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching user payments',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 });
 
 module.exports = router;
-

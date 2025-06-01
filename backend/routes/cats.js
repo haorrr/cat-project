@@ -7,7 +7,7 @@ const { catValidation, commonValidation, handleValidationErrors } = require('../
 
 const router = express.Router();
 
-// @route   GET /api/cats
+// @route   GET /api/cats - FIXED MYSQL SYNTAX
 // @desc    Get cats (user's cats or all cats for admin)
 // @access  Private
 router.get('/', authenticateToken, commonValidation.pagination, handleValidationErrors, async (req, res) => {
@@ -17,36 +17,41 @@ router.get('/', authenticateToken, commonValidation.pagination, handleValidation
         const offset = (page - 1) * limit;
         const { search, breed, gender, active_only } = req.query;
 
+        console.log('===== GET CATS DEBUG =====');
+        console.log('User ID:', req.user.id);
+        console.log('User role:', req.user.role);
+        console.log('Pagination:', { page, limit, offset });
+
         let whereClauses = [];
-        let params = [];
+        let queryParams = [];
 
         // Admin can see all cats, customers only their own
         if (req.user.role === 'admin') {
             if (req.query.user_id) {
                 whereClauses.push('c.user_id = ?');
-                params.push(req.query.user_id);
+                queryParams.push(req.query.user_id);
             }
         } else {
             whereClauses.push('c.user_id = ?');
-            params.push(req.user.id);
+            queryParams.push(req.user.id);
         }
 
         // Filter by search term (name or breed)
         if (search) {
             whereClauses.push('(c.name LIKE ? OR c.breed LIKE ?)');
-            params.push(`%${search}%`, `%${search}%`);
+            queryParams.push(`%${search}%`, `%${search}%`);
         }
 
         // Filter by breed
         if (breed) {
             whereClauses.push('c.breed = ?');
-            params.push(breed);
+            queryParams.push(breed);
         }
 
         // Filter by gender
         if (gender) {
             whereClauses.push('c.gender = ?');
-            params.push(gender);
+            queryParams.push(gender);
         }
 
         // Filter by active status
@@ -56,7 +61,10 @@ router.get('/', authenticateToken, commonValidation.pagination, handleValidation
 
         const whereClause = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
-        // Get cats with owner info
+        console.log('Where clause:', whereClause);
+        console.log('Base params:', queryParams);
+
+        // FIXED: Use string interpolation for LIMIT to avoid MySQL prepared statement issues
         const catsSql = `
             SELECT 
                 c.*,
@@ -77,9 +85,19 @@ router.get('/', authenticateToken, commonValidation.pagination, handleValidation
             ${whereClause}
         `;
 
-        const cats = await query(catsSql, [...params, limit, offset]);
-        const countResult = await query(countSql, params);
-        const total = countResult[0].total;
+        // Use only the where clause params, no LIMIT params needed
+        const catsParams = queryParams;
+
+        console.log('Cats SQL:', catsSql);
+        console.log('Cats params:', catsParams);
+        console.log('Count params:', queryParams);
+
+        const cats = await query(catsSql, catsParams);
+        const countResult = await query(countSql, queryParams);
+        const total = countResult[0]?.total || 0;
+
+        console.log('Results:', { catsFound: cats.length, total });
+        console.log('===== END DEBUG =====');
 
         res.status(200).json({
             success: true,
