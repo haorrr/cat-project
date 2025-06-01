@@ -20,6 +20,8 @@ const newsRoutes = require('./routes/news');
 const paymentRoutes = require('./routes/payments');
 const reviewRoutes = require('./routes/reviews');
 const dashboardRoutes = require('./routes/dashboard');
+const { startTokenCleanup } = require('./middleware/auth');
+startTokenCleanup();
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');

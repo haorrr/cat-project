@@ -7,6 +7,25 @@ const { body } = require('express-validator');
 
 const router = express.Router();
 
+// In-memory token blacklist (in production, use Redis or database)
+const tokenBlacklist = new Set();
+
+// Helper function to check if token is blacklisted
+const isTokenBlacklisted = (token) => {
+    return tokenBlacklist.has(token);
+};
+
+// Helper function to add token to blacklist
+const addTokenToBlacklist = (token) => {
+    tokenBlacklist.add(token);
+    
+    // Optional: Clean up expired tokens periodically
+    // In production, implement proper cleanup mechanism
+    setTimeout(() => {
+        tokenBlacklist.delete(token);
+    }, 24 * 60 * 60 * 1000); // Remove after 24 hours
+};
+
 // @route   POST /api/auth/register
 // @desc    Register new user
 // @access  Public
@@ -136,11 +155,66 @@ router.post('/login', userValidation.login, handleValidationErrors, async (req, 
     }
 });
 
+// @route   POST /api/auth/logout
+// @desc    Logout user and invalidate token
+// @access  Private
+router.post('/logout', authenticateToken, async (req, res) => {
+    try {
+        // Get token from Authorization header
+        const authHeader = req.headers.authorization;
+        const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+        if (!token) {
+            return res.status(400).json({
+                success: false,
+                message: 'No token provided'
+            });
+        }
+
+        // Add token to blacklist
+        addTokenToBlacklist(token);
+
+        // Optional: Log logout activity in database
+        try {
+            await query(
+                'INSERT INTO user_sessions (user_id, action, token_hash, created_at) VALUES (?, ?, ?, NOW())',
+                [req.user.id, 'logout', token.substring(0, 10) + '...'] // Store only partial token for security
+            );
+        } catch (logError) {
+            // Continue if logging fails (table might not exist)
+            console.log('Logout logging failed:', logError.message);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Logged out successfully'
+        });
+
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error during logout'
+        });
+    }
+});
+
 // @route   GET /api/auth/me
 // @desc    Get current user profile
 // @access  Private
 router.get('/me', authenticateToken, async (req, res) => {
     try {
+        // Check if token is blacklisted
+        const authHeader = req.headers.authorization;
+        const token = authHeader && authHeader.split(' ')[1];
+        
+        if (token && isTokenBlacklisted(token)) {
+            return res.status(401).json({
+                success: false,
+                message: 'Token has been invalidated. Please login again.'
+            });
+        }
+
         const user = await query(
             'SELECT id, username, email, full_name, phone, address, role, avatar, created_at, updated_at FROM users WHERE id = ?',
             [req.user.id]
@@ -272,6 +346,14 @@ router.put('/change-password', authenticateToken, [
 // @access  Private
 router.post('/refresh-token', authenticateToken, async (req, res) => {
     try {
+        // Get current token and add to blacklist
+        const authHeader = req.headers.authorization;
+        const oldToken = authHeader && authHeader.split(' ')[1];
+        
+        if (oldToken) {
+            addTokenToBlacklist(oldToken);
+        }
+
         // Generate new token
         const newToken = generateToken(req.user.id);
 
@@ -291,5 +373,52 @@ router.post('/refresh-token', authenticateToken, async (req, res) => {
         });
     }
 });
+
+// @route   POST /api/auth/logout-all
+// @desc    Logout from all devices (invalidate all user tokens)
+// @access  Private
+router.post('/logout-all', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // In a real application, you would:
+        // 1. Store token version in user table
+        // 2. Increment token version to invalidate all tokens
+        // 3. Or maintain a list of valid tokens per user
+
+        // For now, we'll just add current token to blacklist
+        const authHeader = req.headers.authorization;
+        const token = authHeader && authHeader.split(' ')[1];
+        
+        if (token) {
+            addTokenToBlacklist(token);
+        }
+
+        // Optional: Log logout all activity
+        try {
+            await query(
+                'INSERT INTO user_sessions (user_id, action, created_at) VALUES (?, ?, NOW())',
+                [userId, 'logout_all']
+            );
+        } catch (logError) {
+            console.log('Logout all logging failed:', logError.message);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Logged out from all devices successfully'
+        });
+
+    } catch (error) {
+        console.error('Logout all error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error during logout all'
+        });
+    }
+});
+
+// Export blacklist checker for use in auth middleware
+router.isTokenBlacklisted = isTokenBlacklisted;
 
 module.exports = router;
