@@ -31,12 +31,13 @@ router.get('/', optionalAuth, commonValidation.pagination, handleValidationError
 
         const whereClause = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
+        // Inject limit + offset directly (safe because integers from parseInt)
         const servicesSql = `
             SELECT *
             FROM services
             ${whereClause}
             ORDER BY category ASC, name ASC
-            LIMIT ${offset}, ${limit}
+            LIMIT ${limit} OFFSET ${offset}
         `;
 
         const countSql = `
@@ -45,7 +46,7 @@ router.get('/', optionalAuth, commonValidation.pagination, handleValidationError
             ${whereClause}
         `;
 
-        const services = await query(servicesSql, [...params, limit, offset]);
+        const services = await query(servicesSql, params); // No limit/offset in params
         const countResult = await query(countSql, params);
         const total = countResult[0].total;
 
@@ -70,6 +71,7 @@ router.get('/', optionalAuth, commonValidation.pagination, handleValidationError
         });
     }
 });
+
 
 // @route   POST /api/services
 // @desc    Create new service (Admin only)
@@ -119,7 +121,17 @@ router.put('/:id', authenticateToken, requireAdmin, [
 ], handleValidationErrors, async (req, res) => {
     try {
         const serviceId = req.params.id;
-        const { name, description, price, duration_minutes, category, is_active } = req.body;
+        const {
+            name,
+            description,
+            price,
+            duration_minutes,
+            category,
+            is_active
+        } = req.body;
+
+        // Avoid undefined bind error
+        const safe = v => v === undefined ? null : v;
 
         const sql = `
             UPDATE services SET
@@ -133,7 +145,15 @@ router.put('/:id', authenticateToken, requireAdmin, [
             WHERE id = ?
         `;
 
-        const result = await query(sql, [name, description, price, duration_minutes, category, is_active, serviceId]);
+        const result = await query(sql, [
+            safe(name),
+            safe(description),
+            safe(price),
+            safe(duration_minutes),
+            safe(category),
+            safe(is_active),
+            serviceId
+        ]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({

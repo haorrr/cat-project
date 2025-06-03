@@ -64,7 +64,7 @@ newsRouter.get('/', optionalAuth, commonValidation.pagination, handleValidationE
             ${whereClause}
         `;
 
-        const news = await query(newsSql, [...params, limit, offset]);
+        const news = await query(newsSql, params);
         const countResult = await query(countSql, params);
         const total = countResult[0].total;
 
@@ -147,17 +147,15 @@ newsRouter.get('/:id', optionalAuth, async (req, res) => {
     }
 });
 
-// @route   POST /api/news
-// @desc    Create new news article (Admin only)
-// @access  Private/Admin
 newsRouter.post('/', authenticateToken, requireAdmin, newsValidation.create, handleValidationErrors, async (req, res) => {
     try {
-        const { title, content, excerpt, featured_image, category, is_published } = req.body;
+        const { title, content, excerpt, featured_image, category } = req.body;
+        const isPublished = Boolean(req.body.is_published);  // Chính xác hơn
 
         // Generate unique slug
         let slug = generateSlug(title);
         const existingSlug = await query('SELECT id FROM news WHERE slug = ?', [slug]);
-        
+
         if (existingSlug.length > 0) {
             slug = `${slug}-${Date.now()}`;
         }
@@ -167,7 +165,7 @@ newsRouter.post('/', authenticateToken, requireAdmin, newsValidation.create, han
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
-        const publishedAt = is_published ? new Date() : null;
+        const publishedAt = isPublished ? new Date() : null;
 
         const result = await query(sql, [
             title,
@@ -177,7 +175,7 @@ newsRouter.post('/', authenticateToken, requireAdmin, newsValidation.create, han
             featured_image,
             category,
             req.user.id,
-            is_published || false,
+            isPublished,
             publishedAt
         ]);
 
@@ -206,6 +204,7 @@ newsRouter.post('/', authenticateToken, requireAdmin, newsValidation.create, han
         });
     }
 });
+
 
 // @route   PUT /api/news/:id
 // @desc    Update news article (Admin only)

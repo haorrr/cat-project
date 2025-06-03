@@ -28,10 +28,11 @@ router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, ha
             params.push(role);
         }
 
-        if (search) {
+        if (search && search.trim() !== "") {
             whereClauses.push('(full_name LIKE ? OR email LIKE ? OR username LIKE ?)');
             params.push(`%${search}%`, `%${search}%`, `%${search}%`);
         }
+
 
         if (active_only === 'true') {
             whereClauses.push('is_active = TRUE');
@@ -45,8 +46,9 @@ router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, ha
             FROM users
             ${whereClause}
             ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
+            LIMIT ${offset}, ${limit}
         `;
+
 
         const countSql = `
             SELECT COUNT(*) as total
@@ -54,7 +56,7 @@ router.get('/', authenticateToken, requireAdmin, commonValidation.pagination, ha
             ${whereClause}
         `;
 
-        const users = await query(usersSql, [...params, limit, offset]);
+        const users = await query(usersSql, [...params, offset, limit]);
         const countResult = await query(countSql, params);
         const total = countResult[0].total;
 

@@ -20,14 +20,16 @@ const newsRoutes = require('./routes/news');
 const paymentRoutes = require('./routes/payments');
 const reviewRoutes = require('./routes/reviews');
 const dashboardRoutes = require('./routes/dashboard');
-const { startTokenCleanup } = require('./middleware/auth');
-startTokenCleanup();
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
 const { connectDB } = require('./config/database');
+const { startTokenCleanup } = require('./middleware/auth');
 
 const app = express();
+
+// Start token cleanup
+startTokenCleanup();
 
 // Test database connection
 connectDB();
@@ -73,7 +75,7 @@ if (process.env.NODE_ENV !== 'production') {
     app.use(morgan('combined'));
 }
 
-// Static files
+// Static files - serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes
@@ -112,16 +114,24 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`🚀 Pet Care Hotel API Server is running on port ${PORT}`);
     console.log(`📱 Environment: ${process.env.NODE_ENV}`);
     console.log(`🔗 API URL: http://localhost:${PORT}/api`);
     console.log(`💖 Health Check: http://localhost:${PORT}/api/health`);
+    console.log(`📁 Static Files: http://localhost:${PORT}/uploads`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
     console.log('SIGTERM received. Shutting down gracefully...');
+    server.close(() => {
+        console.log('Process terminated');
+    });
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT received. Shutting down gracefully...');
     server.close(() => {
         console.log('Process terminated');
     });
