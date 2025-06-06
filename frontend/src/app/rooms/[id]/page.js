@@ -1,117 +1,213 @@
 // src/app/rooms/[id]/page.js
 "use client";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useState, useEffect } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
 import {
+  Building,
   Users,
-  MapPin,
+  Ruler,
+  DollarSign,
   Star,
-  Calendar,
-  Check,
   Wifi,
-  Tv,
-  Wind,
-  Camera,
-  Heart,
-  Crown,
-  Sparkles,
+  Car,
+  Coffee,
+  Bath,
   ArrowLeft,
-  DollarSign
-} from 'lucide-react';
-import { useGetRoom } from '@/components/hooks/room/useGetRoom';
-import { useCheckAvailability } from '@/components/hooks/room/useCheckAvailability';
+  Heart,
+  Share2,
+  Calendar,
+  CheckCircle,
+  Info,
+  MapPin,
+  Clock,
+  Shield,
+  Award,
+  Phone,
+  Mail,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Maximize2
+} from "lucide-react";
+import axios from "axios";
 
-const RoomDetailPage = () => {
+export default function RoomDetailPage() {
   const params = useParams();
-  const roomId = params.id;
-  const [checkDates, setCheckDates] = useState({
-    check_in: '',
-    check_out: ''
-  });
-
-  const { room, isLoading, isError, error } = useGetRoom(roomId);
-  const { availability, isLoading: checkingAvailability } = useCheckAvailability(
-    roomId, 
-    checkDates.check_in, 
-    checkDates.check_out
-  );
+  const router = useRouter();
+  const [room, setRoom] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
+  const [error, setError] = useState(null);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [checkIn, setCheckIn] = useState("");
+  const [checkOut, setCheckOut] = useState("");
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
+  const [availabilityResult, setAvailabilityResult] = useState(null);
 
   const amenityIcons = {
-    climate_control: Wind,
-    toy_box: Heart,
-    scratching_post: Star,
-    window_view: Camera,
-    cat_tv: Tv,
-    premium_food: Sparkles,
-    climbing_tree: Crown,
-    private_balcony: MapPin,
-    grooming_service: Star,
-    webcam_access: Camera,
-    wifi: Wifi
+    'Wi-Fi': Wifi,
+    'Parking': Car,
+    'Breakfast': Coffee,
+    'Private Bath': Bath,
+    'Air Conditioning': Building,
+    'Heating': Building,
+    'Mini Bar': Coffee,
+    'Balcony': MapPin,
+    'Room Service': Coffee,
+    'Safe': Shield
   };
 
-  const amenityLabels = {
-    climate_control: "Climate Control",
-    toy_box: "Premium Toy Collection",
-    scratching_post: "Multiple Scratching Posts",
-    window_view: "Scenic Window Views",
-    cat_tv: "Cat Entertainment TV",
-    premium_food: "Gourmet Food Options",
-    climbing_tree: "Multi-level Climbing Tree",
-    private_balcony: "Private Outdoor Balcony",
-    grooming_service: "Professional Grooming",
-    webcam_access: "24/7 Webcam Access",
-    wifi: "High-Speed WiFi"
-  };
-
-  const getRoomTypeColor = (type) => {
-    const colors = {
-      standard: "bg-blue-100 text-blue-800",
-      deluxe: "bg-green-100 text-green-800",
-      premium: "bg-purple-100 text-purple-800",
-      vip: "bg-yellow-100 text-yellow-800"
+  // Fetch room details
+  useEffect(() => {
+    const fetchRoom = async () => {
+      try {
+        setIsLoading(true);
+        const response = await axios.get(`http://localhost:5000/api/rooms/${params.id}`);
+        setRoom(response.data.data.room);
+      } catch (err) {
+        setIsError(true);
+        setError(err.response?.data?.message || "Failed to load room details");
+      } finally {
+        setIsLoading(false);
+      }
     };
-    return colors[type] || "bg-gray-100 text-gray-800";
-  };
 
-  const handleDateChange = (field, value) => {
-    setCheckDates(prev => ({ ...prev, [field]: value }));
-  };
-
-  const calculateDays = () => {
-    if (checkDates.check_in && checkDates.check_out) {
-      const start = new Date(checkDates.check_in);
-      const end = new Date(checkDates.check_out);
-      const diffTime = Math.abs(end - start);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays;
+    if (params.id) {
+      fetchRoom();
     }
-    return 0;
+  }, [params.id]);
+
+  // Check availability
+  const checkAvailability = async () => {
+    if (!checkIn || !checkOut) {
+      alert("Please select both check-in and check-out dates");
+      return;
+    }
+
+    try {
+      setIsCheckingAvailability(true);
+      const response = await axios.get(
+        `http://localhost:5000/api/rooms/${params.id}/availability?start_date=${checkIn}&end_date=${checkOut}`
+      );
+      setAvailabilityResult(response.data.data);
+    } catch (err) {
+      console.error("Availability check error:", err);
+      setAvailabilityResult({
+        available: false,
+        reason: "Error checking availability"
+      });
+    } finally {
+      setIsCheckingAvailability(false);
+    }
   };
 
-  const totalPrice = calculateDays() * (room?.price_per_day || 0);
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount);
+  };
+
+  const createImagePlaceholder = (roomName) => {
+    const safeName = roomName ? roomName.replace(/[^\x00-\x7F]/g, "Room") : "Room";
+    const svgString = `
+      <svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="#f3f4f6"/>
+        <text x="50%" y="50%" font-family="Arial" font-size="16" fill="#6b7280" text-anchor="middle" dy=".3em">
+          ${safeName}
+        </text>
+        <rect x="175" y="125" width="50" height="50" fill="#9ca3af" rx="5"/>
+      </svg>
+    `;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
+  };
+
+  // Safe image URL getter
+  const getSafeImageUrl = (imageData) => {
+    try {
+      if (!imageData) return null;
+      
+      // If imageData is a string URL
+      if (typeof imageData === 'string') {
+        return imageData.startsWith('http') ? imageData : `http://localhost:5000${imageData}`;
+      }
+      
+      // If imageData is an object with url property
+      if (typeof imageData === 'object' && imageData.url) {
+        return imageData.url.startsWith('http') ? imageData.url : `http://localhost:5000${imageData.url}`;
+      }
+      
+      // If imageData is an object with image_url property
+      if (typeof imageData === 'object' && imageData.image_url) {
+        return imageData.image_url.startsWith('http') ? imageData.image_url : `http://localhost:5000${imageData.image_url}`;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Image URL error:', error);
+      return null;
+    }
+  };
+
+  const nextImage = () => {
+    if (room?.images && room.images.length > 0) {
+      setCurrentImageIndex((prev) => (prev + 1) % room.images.length);
+    }
+  };
+
+  const prevImage = () => {
+    if (room?.images && room.images.length > 0) {
+      setCurrentImageIndex((prev) => (prev - 1 + room.images.length) % room.images.length);
+    }
+  };
+
+  const getRoomTypeInfo = (type) => {
+    const types = {
+      'standard': { label: 'Standard', color: 'bg-blue-100 text-blue-800' },
+      'deluxe': { label: 'Deluxe', color: 'bg-purple-100 text-purple-800' },
+      'suite': { label: 'Suite', color: 'bg-pink-100 text-pink-800' },
+      'family': { label: 'Family', color: 'bg-green-100 text-green-800' }
+    };
+    return types[type] || { label: type, color: 'bg-gray-100 text-gray-800' };
+  };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <Link href="dashboard/rooms" className="flex items-center text-gray-600 hover:text-gray-900">
+                <ArrowLeft className="h-5 w-5 mr-2" />
+                Back to Rooms
+              </Link>
+              <Link href="/" className="flex items-center">
+                <div className="bg-gradient-to-r from-orange-400 to-pink-400 p-2 rounded-lg">
+                  <Building className="h-6 w-6 text-white" />
+                </div>
+                <span className="ml-2 text-xl font-bold text-gray-900">Cat Hotel</span>
+              </Link>
+            </div>
+          </div>
+        </header>
+
+        {/* Loading Content */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="animate-pulse">
-            <div className="w-full h-96 bg-gray-200 rounded-lg mb-8"></div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-6">
-                <div className="h-8 bg-gray-200 rounded w-3/4"></div>
-                <div className="h-4 bg-gray-200 rounded"></div>
-                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+            <div className="bg-gray-200 h-96 rounded-2xl mb-8"></div>
+            <div className="grid lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                <div className="bg-gray-200 h-8 rounded w-1/2 mb-4"></div>
+                <div className="bg-gray-200 h-4 rounded w-full mb-2"></div>
+                <div className="bg-gray-200 h-4 rounded w-3/4 mb-8"></div>
               </div>
-              <div className="bg-white rounded-lg p-6">
-                <div className="h-32 bg-gray-200 rounded"></div>
+              <div>
+                <div className="bg-gray-200 h-64 rounded-xl"></div>
               </div>
             </div>
           </div>
@@ -120,288 +216,593 @@ const RoomDetailPage = () => {
     );
   }
 
-  if (isError || !room) {
+  if (isError) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Room Not Found</h2>
-          <p className="text-gray-600 mb-6">The room you're looking for doesn't exist.</p>
-          <Link href="/rooms">
-            <Button className="bg-orange-500 hover:bg-orange-600">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Rooms
-            </Button>
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <Link href="/rooms" className="flex items-center text-gray-600 hover:text-gray-900">
+                <ArrowLeft className="h-5 w-5 mr-2" />
+                Back to Rooms
+              </Link>
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+          <div className="bg-red-100 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center">
+            <Building className="h-12 w-12 text-red-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Room Not Found</h1>
+          <p className="text-gray-600 mb-8">{error}</p>
+          <Link
+            href="/rooms"
+            className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 transition-colors"
+          >
+            Browse All Rooms
           </Link>
         </div>
       </div>
     );
   }
 
+  if (!room) return null;
+
+  const typeInfo = getRoomTypeInfo(room.room_type);
+  const images = room.images || [];
+  const currentImageData = images[currentImageIndex];
+  const currentImageUrl = getSafeImageUrl(currentImageData);
+
+  let amenities = [];
+  try {
+    if (Array.isArray(room.amenities)) {
+      amenities = room.amenities;
+    } else if (typeof room.amenities === 'string') {
+      amenities = JSON.parse(room.amenities);
+    } else if (room.amenities) {
+      amenities = Object.values(room.amenities);
+    }
+  } catch (error) {
+    amenities = [];
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Breadcrumb */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <nav className="flex items-center space-x-2 text-sm">
-            <Link href="/" className="text-gray-500 hover:text-gray-700">Home</Link>
-            <span className="text-gray-400">/</span>
-            <Link href="/rooms" className="text-gray-500 hover:text-gray-700">Rooms</Link>
-            <span className="text-gray-400">/</span>
-            <span className="text-gray-900">{room.name}</span>
-          </nav>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Room Images */}
-        <div className="mb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            <div className="lg:col-span-3">
-              <img
-                src={room.images?.[0]?.url || room.images?.[0] || "/api/placeholder/800/500"}
-                alt={room.name}
-                className="w-full h-96 object-cover rounded-lg"
-              />
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
-              {room.images?.slice(1, 4).map((image, index) => (
-                <img
-                  key={index}
-                  src={typeof image === 'string' ? image : image.url || "/api/placeholder/200/150"}
-                  alt={`${room.name} ${index + 2}`}
-                  className="w-full h-28 lg:h-24 object-cover rounded-lg"
-                />
-              ))}
-              {room.images?.length > 4 && (
-                <div className="relative">
-                  <img
-                    src={room.images[4]?.url || room.images[4] || "/api/placeholder/200/150"}
-                    alt="More photos"
-                    className="w-full h-28 lg:h-24 object-cover rounded-lg"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
-                    <span className="text-white font-medium">+{room.images.length - 4} photos</span>
-                  </div>
-                </div>
-              )}
+      {/* Header */}
+      <header className="bg-white shadow-sm sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <Link href="/rooms" className="flex items-center text-gray-600 hover:text-gray-900">
+              <ArrowLeft className="h-5 w-5 mr-2" />
+              Back to Rooms
+            </Link>
+            <Link href="/" className="flex items-center">
+              <div className="bg-gradient-to-r from-orange-400 to-pink-400 p-2 rounded-lg">
+                <Building className="h-6 w-6 text-white" />
+              </div>
+              <span className="ml-2 text-xl font-bold text-gray-900">Cat Hotel</span>
+            </Link>
+            <div className="flex items-center space-x-4">
+              <button className="text-gray-600 hover:text-gray-900 transition-colors">
+                <Share2 className="h-5 w-5" />
+              </button>
+              <button className="text-gray-600 hover:text-red-500 transition-colors">
+                <Heart className="h-5 w-5" />
+              </button>
             </div>
           </div>
         </div>
+      </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Room Details */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Basic Info */}
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <h1 className="text-3xl font-bold text-gray-900">{room.name}</h1>
-                <Badge className={getRoomTypeColor(room.room_type)}>
-                  {room.room_type?.toUpperCase()}
-                </Badge>
-                {!room.is_available && (
-                  <Badge variant="destructive">Not Available</Badge>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Image Gallery */}
+        <div className="mb-8">
+          {images.length > 0 ? (
+            <div className="relative">
+              <div className="relative h-96 rounded-2xl overflow-hidden">
+                <Image
+                  src={currentImageUrl || createImagePlaceholder(room.name)}
+                  alt={room.name}
+                  fill
+                  className="object-cover"
+                  unoptimized={true}
+                  onError={(e) => {
+                    e.target.src = createImagePlaceholder(room.name);
+                  }}
+                />
+                
+                {/* Navigation Arrows */}
+                {images.length > 1 && (
+                  <>
+                    <button
+                      onClick={prevImage}
+                      className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full hover:bg-white transition-colors"
+                    >
+                      <ChevronLeft className="h-6 w-6 text-gray-800" />
+                    </button>
+                    <button
+                      onClick={nextImage}
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/80 backdrop-blur-sm p-2 rounded-full hover:bg-white transition-colors"
+                    >
+                      <ChevronRight className="h-6 w-6 text-gray-800" />
+                    </button>
+                  </>
                 )}
-              </div>
-              
-              <div className="flex items-center gap-6 text-gray-600 mb-4">
-                <div className="flex items-center gap-1">
-                  <Users className="h-5 w-5" />
-                  <span>Up to {room.capacity} cats</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-5 w-5" />
-                  <span>{room.size_sqm}m² space</span>
-                </div>
-                {room.popularity_score && (
-                  <div className="flex items-center gap-1">
-                    <Star className="h-5 w-5 text-yellow-500" />
-                    <span>Popular choice</span>
+
+                {/* Expand Button */}
+                <button
+                  onClick={() => setShowImageModal(true)}
+                  className="absolute bottom-4 right-4 bg-white/80 backdrop-blur-sm p-2 rounded-full hover:bg-white transition-colors"
+                >
+                  <Maximize2 className="h-5 w-5 text-gray-800" />
+                </button>
+
+                {/* Image Counter */}
+                {images.length > 1 && (
+                  <div className="absolute bottom-4 left-4 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+                    {currentImageIndex + 1} / {images.length}
                   </div>
                 )}
               </div>
 
-              <p className="text-gray-700 text-lg leading-relaxed">{room.description}</p>
+              {/* Thumbnail Strip */}
+              {images.length > 1 && (
+                <div className="flex space-x-2 mt-4 overflow-x-auto pb-2">
+                  {images.map((image, index) => {
+                    const thumbnailUrl = getSafeImageUrl(image);
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => setCurrentImageIndex(index)}
+                        className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors ${
+                          index === currentImageIndex ? 'border-orange-500' : 'border-gray-200'
+                        }`}
+                      >
+                        <Image
+                          src={thumbnailUrl || createImagePlaceholder(room.name)}
+                          alt={`${room.name} ${index + 1}`}
+                          width={80}
+                          height={80}
+                          className="object-cover w-full h-full"
+                          unoptimized={true}
+                          onError={(e) => {
+                            e.target.src = createImagePlaceholder(room.name);
+                          }}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="h-96 rounded-2xl overflow-hidden">
+              <Image
+                src={createImagePlaceholder(room.name)}
+                alt={room.name}
+                fill
+                className="object-cover"
+                unoptimized={true}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Content Grid */}
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Left Column - Room Details */}
+          <div className="lg:col-span-2">
+            {/* Room Header */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-4">
+                  <span className={`px-4 py-2 rounded-full text-sm font-medium ${typeInfo.color}`}>
+                    {typeInfo.label}
+                  </span>
+                  <span className={`px-4 py-2 rounded-full text-sm font-medium ${
+                    room.is_available 
+                      ? "bg-green-100 text-green-800" 
+                      : "bg-red-100 text-red-800"
+                  }`}>
+                    {room.is_available ? "Available" : "Unavailable"}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <Star className="h-5 w-5 text-yellow-400 fill-current" />
+                  <Star className="h-5 w-5 text-yellow-400 fill-current" />
+                  <Star className="h-5 w-5 text-yellow-400 fill-current" />
+                  <Star className="h-5 w-5 text-yellow-400 fill-current" />
+                  <Star className="h-5 w-5 text-yellow-400 fill-current" />
+                  <span className="text-sm text-gray-600 ml-2">(4.9)</span>
+                </div>
+              </div>
+
+              <h1 className="text-4xl font-bold text-gray-900 mb-4">{room.name}</h1>
+              
+              <div className="flex items-center space-x-6 mb-6 text-gray-600">
+                <div className="flex items-center">
+                  <Users className="h-5 w-5 mr-2" />
+                  <span>Up to {room.capacity} cats</span>
+                </div>
+                {room.size_sqm && (
+                  <div className="flex items-center">
+                    <Ruler className="h-5 w-5 mr-2" />
+                    <span>{room.size_sqm} m²</span>
+                  </div>
+                )}
+                <div className="flex items-center">
+                  <Clock className="h-5 w-5 mr-2" />
+                  <span>24/7 Care</span>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <div className="flex items-baseline">
+                  <span className="text-4xl font-bold text-gray-900">
+                    {formatCurrency(room.price_per_day)}
+                  </span>
+                  <span className="text-xl text-gray-600 ml-2">/day</span>
+                </div>
+              </div>
+
+              {room.description && (
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-3">About This Room</h3>
+                  <p className="text-gray-600 leading-relaxed">{room.description}</p>
+                </div>
+              )}
             </div>
 
             {/* Amenities */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Room Amenities</CardTitle>
-                <CardDescription>Everything your cat needs for a comfortable stay</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {room.amenities?.map((amenity) => {
-                    const Icon = amenityIcons[amenity] || Check;
-                    const label = amenityLabels[amenity] || amenity.replace('_', ' ').charAt(0).toUpperCase() + amenity.replace('_', ' ').slice(1);
+            {amenities.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+                <h3 className="text-xl font-semibold text-gray-900 mb-6">Room Amenities</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {amenities.map((amenity, index) => {
+                    const IconComponent = amenityIcons[amenity] || CheckCircle;
                     return (
-                      <div key={amenity} className="flex items-center gap-3">
-                        <Icon className="h-5 w-5 text-green-500" />
-                        <span className="text-gray-700">{label}</span>
+                      <div key={index} className="flex items-center">
+                        <IconComponent className="h-5 w-5 text-green-500 mr-3" />
+                        <span className="text-gray-700">{amenity}</span>
                       </div>
                     );
                   })}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            )}
 
-            {/* Room Policies */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Room Policies</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3 text-gray-700">
-                  <div className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-green-500 mt-0.5" />
-                    <div>
-                      <strong>Check-in:</strong> 8:00 AM - 8:00 PM
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-green-500 mt-0.5" />
-                    <div>
-                      <strong>Check-out:</strong> 8:00 AM - 12:00 PM
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-green-500 mt-0.5" />
-                    <div>
-                      <strong>Vaccinations:</strong> Required (FVRCP, Rabies)
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Check className="h-5 w-5 text-green-500 mt-0.5" />
-                    <div>
-                      <strong>Cancellation:</strong> Free cancellation up to 24 hours before check-in
-                    </div>
-                  </div>
+            {/* Policies */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+              <h3 className="text-xl font-semibold text-gray-900 mb-6">Policies & Information</h3>
+              <div className="space-y-6">
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Check-in/Check-out</h4>
+                  <p className="text-gray-600">Check-in: 2:00 PM | Check-out: 12:00 PM</p>
                 </div>
-              </CardContent>
-            </Card>
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Vaccination Requirements</h4>
+                  <p className="text-gray-600">All cats must be up to date on vaccinations and provide health records.</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Cancellation Policy</h4>
+                  <p className="text-gray-600">Free cancellation up to 24 hours before check-in.</p>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Booking Card */}
-          <div className="space-y-6">
-            <Card className="sticky top-6">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-2xl">
-                      ${room.price_per_day}
-                      <span className="text-base font-normal text-gray-500"> /night</span>
-                    </CardTitle>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Star className="h-4 w-4 text-yellow-400 fill-current" />
-                    <span className="text-sm text-gray-600">Popular</span>
-                  </div>
+          {/* Right Column - Booking Card */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 sticky top-24">
+              <div className="mb-6">
+                <div className="flex items-baseline mb-2">
+                  <span className="text-3xl font-bold text-gray-900">
+                    {formatCurrency(room.price_per_day)}
+                  </span>
+                  <span className="text-gray-600 ml-2">/day</span>
                 </div>
-              </CardHeader>
-              
-              <CardContent className="space-y-4">
-                {/* Date Selection */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="check_in">Check In</Label>
-                    <Input
-                      id="check_in"
-                      type="date"
-                      value={checkDates.check_in}
-                      onChange={(e) => handleDateChange('check_in', e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="check_out">Check Out</Label>
-                    <Input
-                      id="check_out"
-                      type="date"
-                      value={checkDates.check_out}
-                      onChange={(e) => handleDateChange('check_out', e.target.value)}
-                      min={checkDates.check_in || new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
+                <p className="text-sm text-gray-500">All taxes and fees included</p>
+              </div>
+
+              {/* Date Selection */}
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Check-in Date
+                  </label>
+                  <input
+                    type="date"
+                    value={checkIn}
+                    onChange={(e) => setCheckIn(e.target.value)}
+                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Check-out Date
+                  </label>
+                  <input
+                    type="date"
+                    value={checkOut}
+                    onChange={(e) => setCheckOut(e.target.value)}
+                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
 
-                {/* Availability Check */}
-                {checkDates.check_in && checkDates.check_out && (
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    {checkingAvailability ? (
-                      <div className="text-sm text-gray-600">Checking availability...</div>
-                    ) : availability ? (
-                      availability.available ? (
-                        <div className="text-sm text-green-600 flex items-center gap-2">
-                          <Check className="h-4 w-4" />
-                          Available for selected dates
-                        </div>
-                      ) : (
-                        <div className="text-sm text-red-600">
-                          Not available for selected dates
-                        </div>
-                      )
-                    ) : null}
-                  </div>
+              {/* Availability Check */}
+              <button
+                onClick={checkAvailability}
+                disabled={isCheckingAvailability || !checkIn || !checkOut}
+                className="w-full bg-gray-200 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center mb-4"
+              >
+                {isCheckingAvailability ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-700 mr-2"></div>
+                    Checking...
+                  </>
+                ) : (
+                  "Check Availability"
                 )}
+              </button>
 
-                {/* Price Breakdown */}
-                {calculateDays() > 0 && (
-                  <div className="space-y-2 p-3 bg-gray-50 rounded-lg">
-                    <div className="flex justify-between text-sm">
-                      <span>${room.price_per_day} × {calculateDays()} nights</span>
-                      <span>${totalPrice.toFixed(2)}</span>
-                    </div>
-                    <div className="border-t pt-2 flex justify-between font-semibold">
-                      <span>Total</span>
-                      <span>${totalPrice.toFixed(2)}</span>
-                    </div>
+              {/* Availability Result */}
+              {availabilityResult && (
+                <div className={`p-4 rounded-lg mb-6 ${
+                  availabilityResult.available 
+                    ? "bg-green-50 border border-green-200" 
+                    : "bg-red-50 border border-red-200"
+                }`}>
+                  <div className="flex items-center">
+                    <CheckCircle className={`h-5 w-5 mr-2 ${
+                      availabilityResult.available ? "text-green-500" : "text-red-500"
+                    }`} />
+                    <span className={`font-medium ${
+                      availabilityResult.available ? "text-green-800" : "text-red-800"
+                    }`}>
+                      {availabilityResult.available ? "Available!" : "Not Available"}
+                    </span>
                   </div>
-                )}
-
-                {/* Booking Button */}
-                <div className="space-y-2">
-                  {room.is_available && availability?.available !== false ? (
-                    <Link 
-                      href={`/booking/new?room_id=${room.id}&check_in=${checkDates.check_in}&check_out=${checkDates.check_out}`}
-                      className="block"
-                    >
-                      <Button className="w-full bg-orange-500 hover:bg-orange-600" size="lg">
-                        Reserve Now
-                      </Button>
-                    </Link>
-                  ) : (
-                    <Button disabled className="w-full" size="lg">
-                      Not Available
-                    </Button>
+                  {availabilityResult.reason && (
+                    <p className={`text-sm mt-1 ${
+                      availabilityResult.available ? "text-green-700" : "text-red-700"
+                    }`}>
+                      {availabilityResult.reason}
+                    </p>
                   )}
-                  <p className="text-xs text-gray-500 text-center">
-                    You won't be charged yet
-                  </p>
+                  {availabilityResult.conflicting_bookings > 0 && (
+                    <p className="text-sm text-red-700 mt-1">
+                      {availabilityResult.conflicting_bookings} conflicting booking(s) found
+                    </p>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
+              )}
 
-            {/* Contact Card */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Questions?</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600 text-sm mb-4">
-                  Our team is here to help with any questions about this room or booking process.
-                </p>
-                <Link href="/contact">
-                  <Button variant="outline" className="w-full">
-                    Contact Us
-                  </Button>
+              {/* Book Now Button */}
+              <Link
+                href="/auth"
+                className="w-full bg-gradient-to-r from-orange-400 to-pink-400 text-white py-4 px-4 rounded-lg font-semibold hover:from-orange-500 hover:to-pink-500 transition-all duration-200 flex items-center justify-center mb-6"
+              >
+                <Calendar className="h-5 w-5 mr-2" />
+                Book This Room
+              </Link>
+
+              {/* Contact Info */}
+              <div className="border-t border-gray-200 pt-6">
+                <h4 className="font-medium text-gray-900 mb-4">Need Help?</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center text-gray-600">
+                    <Phone className="h-4 w-4 mr-3" />
+                    <span className="text-sm">Call us: (555) 123-4567</span>
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <Mail className="h-4 w-4 mr-3" />
+                    <span className="text-sm">hello@cathotel.com</span>
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <Clock className="h-4 w-4 mr-3" />
+                    <span className="text-sm">24/7 Support Available</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Safety Features */}
+              <div className="border-t border-gray-200 pt-6 mt-6">
+                <h4 className="font-medium text-gray-900 mb-4">Safety Features</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center text-gray-600">
+                    <Shield className="h-4 w-4 mr-3 text-green-500" />
+                    <span className="text-sm">24/7 Security Monitoring</span>
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <CheckCircle className="h-4 w-4 mr-3 text-green-500" />
+                    <span className="text-sm">Climate Controlled</span>
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <Award className="h-4 w-4 mr-3 text-green-500" />
+                    <span className="text-sm">Licensed & Insured</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Similar Rooms */}
+        <div className="mt-16">
+          <h2 className="text-2xl font-bold text-gray-900 mb-8">Similar Rooms You Might Like</h2>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* This would be populated with similar rooms data */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div className="bg-gray-100 h-48 rounded-lg mb-4 flex items-center justify-center">
+                <Building className="h-12 w-12 text-gray-400" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-2">Deluxe Cat Suite</h3>
+              <p className="text-gray-600 text-sm mb-4">Spacious luxury accommodation with premium amenities</p>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900">$89/day</span>
+                <Link href="/rooms/2" className="text-orange-600 hover:text-orange-700 text-sm font-medium">
+                  View Details
                 </Link>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div className="bg-gray-100 h-48 rounded-lg mb-4 flex items-center justify-center">
+                <Building className="h-12 w-12 text-gray-400" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-2">Family Cat Room</h3>
+              <p className="text-gray-600 text-sm mb-4">Perfect for multiple cats with extra space and amenities</p>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900">$129/day</span>
+                <Link href="/rooms/3" className="text-orange-600 hover:text-orange-700 text-sm font-medium">
+                  View Details
+                </Link>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div className="bg-gray-100 h-48 rounded-lg mb-4 flex items-center justify-center">
+                <Building className="h-12 w-12 text-gray-400" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-2">Standard Comfort</h3>
+              <p className="text-gray-600 text-sm mb-4">Comfortable basic accommodation with essential amenities</p>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900">$49/day</span>
+                <Link href="/rooms/4" className="text-orange-600 hover:text-orange-700 text-sm font-medium">
+                  View Details
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA Section */}
+        <div className="mt-16 bg-gradient-to-r from-orange-50 to-pink-50 rounded-2xl p-8 text-center">
+          <h2 className="text-3xl font-bold text-gray-900 mb-4">Ready to Book Your Cat's Stay?</h2>
+          <p className="text-xl text-gray-600 mb-8">
+            Give your cat the luxury treatment they deserve with our premium accommodations.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/auth"
+              className="bg-gradient-to-r from-orange-400 to-pink-400 text-white px-8 py-4 rounded-xl font-semibold hover:from-orange-500 hover:to-pink-500 transition-all duration-200 flex items-center justify-center"
+            >
+              <Calendar className="h-5 w-5 mr-2" />
+              Book Now
+            </Link>
+            <Link
+              href="/rooms"
+              className="border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-xl font-semibold hover:border-gray-400 hover:bg-gray-50 transition-all duration-200 flex items-center justify-center"
+            >
+              <Building className="h-5 w-5 mr-2" />
+              Browse All Rooms
+            </Link>
           </div>
         </div>
       </div>
+
+      {/* Image Modal */}
+      {showImageModal && currentImageUrl && (
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4">
+          <div className="relative max-w-4xl w-full">
+            <button
+              onClick={() => setShowImageModal(false)}
+              className="absolute top-4 right-4 bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-colors z-10"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            
+            <div className="relative">
+              <Image
+                src={currentImageUrl}
+                alt={room.name}
+                width={800}
+                height={600}
+                className="w-full h-auto rounded-lg"
+                unoptimized={true}
+                onError={(e) => {
+                  e.target.src = createImagePlaceholder(room.name);
+                }}
+              />
+              
+              {images.length > 1 && (
+                <>
+                  <button
+                    onClick={prevImage}
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/30 transition-colors"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                  <button
+                    onClick={nextImage}
+                    className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/30 transition-colors"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                </>
+              )}
+              
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-4 py-2 rounded-full text-sm">
+                {currentImageIndex + 1} / {images.length}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="bg-gray-900 text-white mt-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="grid md:grid-cols-4 gap-8">
+            <div className="col-span-2">
+              <div className="flex items-center mb-4">
+                <div className="bg-gradient-to-r from-orange-400 to-pink-400 p-2 rounded-lg">
+                  <Building className="h-6 w-6 text-white" />
+                </div>
+                <span className="ml-2 text-xl font-bold">Cat Hotel</span>
+              </div>
+              <p className="text-gray-400 mb-4">
+                Premium accommodations and loving care for your beloved cats. 
+                We provide a safe, comfortable, and enjoyable experience for every feline guest.
+              </p>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Quick Links</h3>
+              <ul className="space-y-2 text-gray-400">
+                <li><Link href="/rooms" className="hover:text-white transition-colors">All Rooms</Link></li>
+                <li><Link href="/services" className="hover:text-white transition-colors">Services</Link></li>
+                <li><Link href="/about" className="hover:text-white transition-colors">About Us</Link></li>
+                <li><Link href="/contact" className="hover:text-white transition-colors">Contact</Link></li>
+              </ul>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Contact Info</h3>
+              <ul className="space-y-2 text-gray-400">
+                <li className="flex items-center">
+                  <Phone className="h-4 w-4 mr-2" />
+                  (555) 123-4567
+                </li>
+                <li className="flex items-center">
+                  <Mail className="h-4 w-4 mr-2" />
+                  hello@cathotel.com
+                </li>
+                <li className="flex items-center">
+                  <MapPin className="h-4 w-4 mr-2" />
+                  123 Pet Street, City
+                </li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
+            <p>&copy; 2024 Cat Hotel. All rights reserved. Made with ❤️ for cats.</p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
-};
-
-export default RoomDetailPage;
+}

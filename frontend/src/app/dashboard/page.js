@@ -1,306 +1,329 @@
 // src/app/dashboard/page.js
 "use client";
 
-import React from 'react';
-import Link from 'next/link';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useState } from "react";
+import Link from "next/link";
 import {
-  PawPrint,
+  Cat,
   Calendar,
   CreditCard,
   Star,
   Plus,
-  TrendingUp,
   Clock,
   CheckCircle,
-  AlertCircle
-} from 'lucide-react';
-import { useGetUser } from '@/components/hooks/auth/useGetUser';
-import { useGetCats } from '@/components/hooks/cat/useGetCats';
-import { useGetBooking } from '@/components/hooks/booking/useGetBooking';
+  AlertCircle,
+  Heart,
+  TrendingUp,
+  MapPin
+} from "lucide-react";
+import { useGetUser } from "../../components/hooks/auth/useGetUser";
+import { useGetCats } from "../../components/hooks/cat/useGetCats";
+import { useGetBooking } from "../../components/hooks/booking/useGetBooking";
+import { MainLayout } from "../../components/layout/MainLayout";
 
-const DashboardPage = () => {
+export default function UserDashboard() {
   const { user } = useGetUser();
-  const { cats } = useGetCats({ active_only: true, limit: 5 });
+  const { cats } = useGetCats({ active_only: true, limit: 4 });
   const { bookings } = useGetBooking({ limit: 5 });
 
   const getStatusColor = (status) => {
     const colors = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      confirmed: 'bg-blue-100 text-blue-800',
-      checked_in: 'bg-green-100 text-green-800',
-      checked_out: 'bg-gray-100 text-gray-800',
-      cancelled: 'bg-red-100 text-red-800'
+      pending: "bg-yellow-100 text-yellow-800",
+      confirmed: "bg-blue-100 text-blue-800",
+      checked_in: "bg-green-100 text-green-800",
+      checked_out: "bg-gray-100 text-gray-800",
+      cancelled: "bg-red-100 text-red-800"
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return colors[status] || "bg-gray-100 text-gray-800";
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case "confirmed":
+        return <CheckCircle className="h-4 w-4" />;
+      case "pending":
+        return <Clock className="h-4 w-4" />;
+      case "checked_in":
+        return <Heart className="h-4 w-4" />;
+      default:
+        return <AlertCircle className="h-4 w-4" />;
+    }
   };
 
-  // Stats calculation
-  const totalCats = cats?.length || 0;
-  const totalBookings = bookings?.length || 0;
-  const activeBookings = bookings?.filter(b => ['confirmed', 'checked_in'].includes(b.status))?.length || 0;
-  const totalSpent = bookings?.reduce((sum, booking) => sum + (parseFloat(booking.total_price) || 0), 0) || 0;
+  const stats = [
+    {
+      name: "My Cats",
+      value: cats?.length || 0,
+      icon: Cat,
+      color: "from-orange-400 to-pink-400",
+      href: "/dashboard/cats"
+    },
+    {
+      name: "Active Bookings",
+      value: bookings?.filter(b => ['confirmed', 'checked_in'].includes(b.status)).length || 0,
+      icon: Calendar,
+      color: "from-blue-400 to-purple-400",
+      href: "/dashboard/bookings"
+    },
+    {
+      name: "Total Bookings",
+      value: bookings?.length || 0,
+      icon: CreditCard,
+      color: "from-green-400 to-teal-400",
+      href: "/dashboard/bookings"
+    },
+    {
+      name: "Reviews Given",
+      value: "12", // This would come from reviews API
+      icon: Star,
+      color: "from-yellow-400 to-orange-400",
+      href: "/dashboard/reviews"
+    }
+  ];
+
+  const upcomingBookings = bookings?.filter(booking => 
+    ['confirmed', 'pending'].includes(booking.status) && 
+    new Date(booking.check_in_date) >= new Date()
+  ) || [];
 
   return (
-    <div className="space-y-6">
-      {/* Welcome Header */}
-      <div className="bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-lg p-6">
-        <h1 className="text-2xl font-bold mb-2">Welcome back, {user?.full_name}!</h1>
-        <p className="text-orange-100">
-          Here's what's happening with your cats and bookings
-        </p>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Cats</CardTitle>
-            <PawPrint className="h-4 w-4 text-orange-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCats}</div>
-            <p className="text-xs text-muted-foreground">
-              Registered cats
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Bookings</CardTitle>
-            <Calendar className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeBookings}</div>
-            <p className="text-xs text-muted-foreground">
-              Currently active
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Bookings</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalBookings}</div>
-            <p className="text-xs text-muted-foreground">
-              All time bookings
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
-            <CreditCard className="h-4 w-4 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">${totalSpent.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">
-              All time spending
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Bookings */}
-        <Card>
-          <CardHeader>
+    <MainLayout>
+      <div className="p-6">
+        {/* Welcome Header */}
+        <div className="mb-8">
+          <div className="bg-gradient-to-r from-orange-500 to-pink-500 rounded-2xl p-8 text-white">
             <div className="flex items-center justify-between">
-              <CardTitle>Recent Bookings</CardTitle>
-              <Link href="/dashboard/bookings">
-                <Button variant="outline" size="sm">
-                  View All
-                </Button>
-              </Link>
-            </div>
-            <CardDescription>
-              Your latest booking activities
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {bookings && bookings.length > 0 ? (
-              <div className="space-y-3">
-                {bookings.slice(0, 3).map((booking) => (
-                  <div key={booking.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-medium text-sm">{booking.cat_name}</p>
-                        <Badge className={getStatusColor(booking.status)} size="sm">
-                          {booking.status}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        {formatDate(booking.check_in_date)} - {formatDate(booking.check_out_date)}
-                      </p>
-                      <p className="text-xs text-gray-600">{booking.room_name}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-sm">${booking.total_price}</p>
-                    </div>
-                  </div>
-                ))}
+              <div>
+                <h1 className="text-3xl font-bold mb-2">
+                  Welcome back, {user?.full_name || user?.username}! 🐱
+                </h1>
+                <p className="text-orange-100 text-lg">
+                  Ready to take care of your furry friends?
+                </p>
               </div>
-            ) : (
-              <div className="text-center py-6">
-                <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-500 mb-3">No bookings yet</p>
-                <Link href="/booking/new">
-                  <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create First Booking
-                  </Button>
+              <div className="hidden md:block">
+                <div className="bg-white/20 backdrop-blur-sm rounded-full p-4">
+                  <Cat className="h-12 w-12 text-white" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {stats.map((stat) => (
+            <Link
+              key={stat.name}
+              href={stat.href}
+              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 group"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 mb-1">{stat.name}</p>
+                  <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
+                </div>
+                <div className={`bg-gradient-to-r ${stat.color} p-3 rounded-xl group-hover:scale-110 transition-transform duration-200`}>
+                  <stat.icon className="h-6 w-6 text-white" />
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Quick Actions */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-6">Quick Actions</h2>
+              <div className="space-y-4">
+                <Link
+                  href="/dashboard/bookings/new"
+                  className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-50 to-pink-50 rounded-xl hover:from-orange-100 hover:to-pink-100 transition-colors duration-200 group"
+                >
+                  <div className="flex items-center">
+                    <div className="bg-gradient-to-r from-orange-400 to-pink-400 p-2 rounded-lg mr-3">
+                      <Calendar className="h-5 w-5 text-white" />
+                    </div>
+                    <span className="font-medium text-gray-900">Book a Stay</span>
+                  </div>
+                  <Plus className="h-5 w-5 text-gray-400 group-hover:text-gray-600" />
+                </Link>
+
+                <Link
+                  href="/dashboard/cats/new"
+                  className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl hover:from-blue-100 hover:to-purple-100 transition-colors duration-200 group"
+                >
+                  <div className="flex items-center">
+                    <div className="bg-gradient-to-r from-blue-400 to-purple-400 p-2 rounded-lg mr-3">
+                      <Cat className="h-5 w-5 text-white" />
+                    </div>
+                    <span className="font-medium text-gray-900">Add New Cat</span>
+                  </div>
+                  <Plus className="h-5 w-5 text-gray-400 group-hover:text-gray-600" />
+                </Link>
+
+                <Link
+                  href="/dashboard/rooms"
+                  className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-teal-50 rounded-xl hover:from-green-100 hover:to-teal-100 transition-colors duration-200 group"
+                >
+                  <div className="flex items-center">
+                    <div className="bg-gradient-to-r from-green-400 to-teal-400 p-2 rounded-lg mr-3">
+                      <MapPin className="h-5 w-5 text-white" />
+                    </div>
+                    <span className="font-medium text-gray-900">Browse Rooms</span>
+                  </div>
+                  <TrendingUp className="h-5 w-5 text-gray-400 group-hover:text-gray-600" />
                 </Link>
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* My Cats */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>My Cats</CardTitle>
-              <Link href="/dashboard/cats">
-                <Button variant="outline" size="sm">
-                  View All
-                </Button>
-              </Link>
             </div>
-            <CardDescription>
-              Your registered cats
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {cats && cats.length > 0 ? (
-              <div className="space-y-3">
-                {cats.slice(0, 3).map((cat) => (
-                  <div key={cat.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-                        <PawPrint className="h-5 w-5 text-orange-600" />
+
+            {/* My Cats Summary */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mt-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-gray-900">My Cats</h2>
+                <Link
+                  href="/dashboard/cats"
+                  className="text-orange-600 hover:text-orange-700 text-sm font-medium"
+                >
+                  View All
+                </Link>
+              </div>
+              
+              {cats && cats.length > 0 ? (
+                <div className="space-y-4">
+                  {cats.slice(0, 3).map((cat) => (
+                    <div key={cat.id} className="flex items-center space-x-3">
+                      <div className="bg-gradient-to-r from-orange-400 to-pink-400 h-10 w-10 rounded-full flex items-center justify-center">
+                        <Cat className="h-5 w-5 text-white" />
                       </div>
-                      <div>
-                        <p className="font-medium text-sm">{cat.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {cat.breed && `${cat.breed} • `}
-                          {cat.gender} • {cat.age ? `${cat.age} years` : 'Age unknown'}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {cat.name}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {cat.breed || "Mixed breed"} • {cat.age ? `${cat.age} years` : "Age unknown"}
                         </p>
                       </div>
                     </div>
-                    <Badge variant={cat.is_active ? "default" : "secondary"} size="sm">
-                      {cat.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <PawPrint className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-500 mb-3">No cats registered yet</p>
-                <Link href="/dashboard/cats/new">
-                  <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
-                    <Plus className="h-4 w-4 mr-2" />
+                  ))}
+                  {cats.length > 3 && (
+                    <div className="text-center pt-4">
+                      <span className="text-sm text-gray-500">
+                        +{cats.length - 3} more cats
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Cat className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 mb-4">No cats added yet</p>
+                  <Link
+                    href="/dashboard/cats/new"
+                    className="bg-gradient-to-r from-orange-500 to-pink-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:from-orange-600 hover:to-pink-600 transition-all duration-200"
+                  >
                     Add Your First Cat
-                  </Button>
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Recent Bookings & Upcoming */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-gray-900">Recent Bookings</h2>
+                <Link
+                  href="/dashboard/bookings"
+                  className="text-orange-600 hover:text-orange-700 text-sm font-medium"
+                >
+                  View All
                 </Link>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>
-            Common tasks you might want to do
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link href="/dashboard/cats/new">
-              <Button variant="outline" className="w-full h-16 flex-col gap-2">
-                <Plus className="h-5 w-5" />
-                <span>Add New Cat</span>
-              </Button>
-            </Link>
-            
-            <Link href="/booking/new">
-              <Button variant="outline" className="w-full h-16 flex-col gap-2">
-                <Calendar className="h-5 w-5" />
-                <span>Create Booking</span>
-              </Button>
-            </Link>
-            
-            <Link href="/rooms">
-              <Button variant="outline" className="w-full h-16 flex-col gap-2">
-                <TrendingUp className="h-5 w-5" />
-                <span>Browse Rooms</span>
-              </Button>
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Recent Activity */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-          <CardDescription>
-            Latest updates and notifications
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Activity items would come from an API */}
-            <div className="flex items-start gap-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div className="flex-1">
-                <p className="text-sm">Welcome to PetCare Hotel! Complete your profile to get started.</p>
-                <p className="text-xs text-gray-500 mt-1">Just now</p>
-              </div>
+              {bookings && bookings.length > 0 ? (
+                <div className="space-y-4">
+                  {bookings.slice(0, 5).map((booking) => (
+                    <div key={booking.id} className="border border-gray-100 rounded-xl p-4 hover:shadow-sm transition-shadow duration-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(booking.status)}`}>
+                            {getStatusIcon(booking.status)}
+                            <span className="capitalize">{booking.status}</span>
+                          </div>
+                          <span className="text-sm text-gray-500">
+                            Booking #{booking.id}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-gray-900">
+                            ${booking.total_price}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="grid md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="text-gray-600">
+                            <span className="font-medium">Cat:</span> {booking.cat_name}
+                          </p>
+                          <p className="text-gray-600">
+                            <span className="font-medium">Room:</span> {booking.room_name}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">
+                            <span className="font-medium">Check-in:</span> {new Date(booking.check_in_date).toLocaleDateString()}
+                          </p>
+                          <p className="text-gray-600">
+                            <span className="font-medium">Check-out:</span> {new Date(booking.check_out_date).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Calendar className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No bookings yet</h3>
+                  <p className="text-gray-500 mb-6">
+                    Start by booking your first cat stay with us!
+                  </p>
+                  <Link
+                    href="/dashboard/bookings/new"
+                    className="bg-gradient-to-r from-orange-500 to-pink-500 text-white px-6 py-3 rounded-lg font-medium hover:from-orange-600 hover:to-pink-600 transition-all duration-200 inline-flex items-center"
+                  >
+                    <Calendar className="h-5 w-5 mr-2" />
+                    Book Now
+                  </Link>
+                </div>
+              )}
             </div>
-            
-            {bookings && bookings.length > 0 && (
-              <div className="flex items-start gap-3">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                <div className="flex-1">
-                  <p className="text-sm">Your booking for {bookings[0]?.cat_name} is {bookings[0]?.status}</p>
-                  <p className="text-xs text-gray-500 mt-1">{formatDate(bookings[0]?.created_at)}</p>
-                </div>
-              </div>
-            )}
-            
-            {cats && cats.length > 0 && (
-              <div className="flex items-start gap-3">
-                <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-                <div className="flex-1">
-                  <p className="text-sm">Cat profile for {cats[0]?.name} was created successfully</p>
-                  <p className="text-xs text-gray-500 mt-1">{formatDate(cats[0]?.created_at)}</p>
+
+            {/* Upcoming Bookings Alert */}
+            {upcomingBookings.length > 0 && (
+              <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-xl p-4 mt-6">
+                <div className="flex items-center">
+                  <div className="bg-blue-500 p-2 rounded-lg mr-4">
+                    <Clock className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-blue-900">
+                      You have {upcomingBookings.length} upcoming booking{upcomingBookings.length > 1 ? 's' : ''}
+                    </h3>
+                    <p className="text-sm text-blue-700">
+                      Next check-in: {new Date(upcomingBookings[0].check_in_date).toLocaleDateString()}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </div>
+    </MainLayout>
   );
-};
-
-export default DashboardPage;
+}

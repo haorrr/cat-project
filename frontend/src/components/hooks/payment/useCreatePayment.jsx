@@ -1,13 +1,10 @@
-// src/components/hooks/payment/useCreatePayment.jsx
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 
 export function useCreatePayment() {
-  const queryClient = useQueryClient();
-
-  const createPayment = async (paymentData) => {
-    try {
+  return useMutation({
+    mutationFn: async (formData) => {
       const token = localStorage.getItem("token");
 
       const res = await fetch("http://localhost:5000/api/payments", {
@@ -17,34 +14,12 @@ export function useCreatePayment() {
           ...(token && { Authorization: `Bearer ${token}` }),
         },
         credentials: "include",
-        body: JSON.stringify(paymentData),
+        body: JSON.stringify(formData),
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || "Failed to process payment");
-      }
+      if (!res.ok) throw new Error(data.message || "Failed to create payment");
       return data.data.payment;
-    } catch (err) {
-      console.error("Error processing payment:", err);
-      throw err;
-    }
-  };
-
-  const {
-    mutate: createPaymentMutation,
-    isLoading,
-    isError,
-    error,
-    isSuccess,
-    data: payment,
-  } = useMutation({
-    mutationFn: createPayment,
-    onSuccess: () => {
-      queryClient.invalidateQueries(["payments"]);
-      queryClient.invalidateQueries(["bookings"]);
     },
   });
-
-  return { createPaymentMutation, isLoading, isError, error, isSuccess, payment };
 }

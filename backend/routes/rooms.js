@@ -228,20 +228,144 @@ router.get('/:id', optionalAuth, commonValidation.id, handleValidationErrors, as
 // @route   POST /api/rooms
 // @desc    Create room with images
 // @access  Admin
-router.post('/', authenticateToken, requireAdmin, upload.array('images', 10), roomValidation.create, handleValidationErrors, async (req, res) => {
-    const connection = await transaction();
+// router.post('/', authenticateToken, requireAdmin, upload.array('images', 10),(req, res, next) => {
+//     console.log("----DEBUG:req.headers['content-type']:", req.headers["content-type"]);
+//     console.log("----DEBUG:req.body:", req.body);
+//     console.log("----DEBUG:req.files:", req.files?.map(f => f.filename));
+//     next();
+//   }, roomValidation.create, handleValidationErrors, async (req, res) => {
+//     const connection = await transaction();
     
+//     try {
+//         const { name, description, room_type, capacity, price_per_day, amenities, size_sqm } = req.body;
+//         const uploadedFiles = req.files || [];
+
+//         // Create room
+//         const roomSql = `
+//             INSERT INTO rooms (name, description, room_type, capacity, price_per_day, amenities, size_sqm)
+//             VALUES (?, ?, ?, ?, ?, ?, ?)
+//         `;
+
+//         const roomResult = await query(roomSql, [
+//             name,
+//             description,
+//             room_type,
+//             capacity,
+//             price_per_day,
+//             JSON.stringify(amenities || []),
+//             size_sqm
+//         ], connection);
+
+//         const roomId = roomResult.insertId;
+
+//         // Save room images
+//         if (uploadedFiles.length > 0) {
+//             const imagePromises = uploadedFiles.map(async (file, index) => {
+//                 const imageUrl = `/uploads/rooms/${file.filename}`;
+//                 const isPrimary = index === 0; // First image is primary
+
+//                 const imageSql = `
+//                     INSERT INTO room_images (room_id, image_url, is_primary)
+//                     VALUES (?, ?, ?)
+//                 `;
+
+//                 return query(imageSql, [roomId, imageUrl, isPrimary], connection);
+//             });
+
+//             await Promise.all(imagePromises);
+//         }
+
+//         await connection.commit();
+
+//         // Get the created room with images
+//         const newRoom = await query(`
+//             SELECT r.*, 
+//                    GROUP_CONCAT(ri.image_url) as images
+//             FROM rooms r
+//             LEFT JOIN room_images ri ON r.id = ri.room_id
+//             WHERE r.id = ?
+//             GROUP BY r.id
+//         `, [roomId]);
+
+//         const roomWithImages = {
+//             ...newRoom[0],
+//             amenities: newRoom[0].amenities ? JSON.parse(newRoom[0].amenities) : [],
+//             images: newRoom[0].images ? newRoom[0].images.split(',') : []
+//         };
+
+//         res.status(201).json({
+//             success: true,
+//             message: 'Room created successfully',
+//             data: {
+//                 room: roomWithImages
+//             }
+//         });
+
+//     } catch (error) {
+//         await connection.rollback();
+//         console.error('Create room error:', error);
+
+//         // Delete uploaded files if room creation failed
+//         if (req.files) {
+//             req.files.forEach(file => {
+//                 fs.unlink(file.path, (err) => {
+//                     if (err) console.error('Error deleting file:', err);
+//                 });
+//             });
+//         }
+
+//         res.status(500).json({
+//             success: false,
+//             message: 'Server error while creating room'
+//         });
+//     } finally {
+//         connection.release();
+//     }
+// });
+router.post(
+  '/',
+  authenticateToken,
+  requireAdmin,
+  upload.array('images', 10),
+
+  // Middleware debug (in ra để kiểm tra req.body và req.files)
+  (req, res, next) => {
+    console.log("----DEBUG:req.headers['content-type']:", req.headers["content-type"]);
+    console.log("----DEBUG:req.body:", req.body);
+    console.log("----DEBUG:req.files:", req.files?.map(f => f.filename));
+    next();
+  },
+
+  // Validation
+  roomValidation.create,
+  handleValidationErrors,
+
+  // Handler chính (được sửa lại để dùng transaction(callback))
+  async (req, res) => {
     try {
-        const { name, description, room_type, capacity, price_per_day, amenities, size_sqm } = req.body;
+      // Gọi transaction với callback chứa toàn bộ logic insert
+      const roomId = await transaction(async (connection) => {
+        // 1) Lấy dữ liệu từ req.body, req.files
+        const {
+          name,
+          description,
+          room_type,
+          capacity,
+          price_per_day,
+          amenities,
+          size_sqm
+        } = req.body;
         const uploadedFiles = req.files || [];
 
-        // Create room
+        // 2) Chèn vào bảng rooms
         const roomSql = `
-            INSERT INTO rooms (name, description, room_type, capacity, price_per_day, amenities, size_sqm)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO rooms
+            (name, description, room_type, capacity, price_per_day, amenities, size_sqm)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
-
-        const roomResult = await query(roomSql, [
+        const roomResult = await query(
+          roomSql,
+          [
             name,
             description,
             room_type,
@@ -249,74 +373,83 @@ router.post('/', authenticateToken, requireAdmin, upload.array('images', 10), ro
             price_per_day,
             JSON.stringify(amenities || []),
             size_sqm
-        ], connection);
+          ],
+          connection
+        );
+        const newRoomId = roomResult.insertId;
 
-        const roomId = roomResult.insertId;
-
-        // Save room images
+        // 3) Nếu có file ảnh, chèn vào room_images
         if (uploadedFiles.length > 0) {
-            const imagePromises = uploadedFiles.map(async (file, index) => {
-                const imageUrl = `/uploads/rooms/${file.filename}`;
-                const isPrimary = index === 0; // First image is primary
-
-                const imageSql = `
-                    INSERT INTO room_images (room_id, image_url, is_primary)
-                    VALUES (?, ?, ?)
-                `;
-
-                return query(imageSql, [roomId, imageUrl, isPrimary], connection);
-            });
-
-            await Promise.all(imagePromises);
+          const imagePromises = uploadedFiles.map((file, index) => {
+            const imageUrl = `/uploads/rooms/${file.filename}`;
+            const isPrimary = index === 0; // Ảnh đầu tiên là primary
+            const imageSql = `
+              INSERT INTO room_images (room_id, image_url, is_primary)
+              VALUES (?, ?, ?)
+            `;
+            return query(imageSql, [newRoomId, imageUrl, isPrimary], connection);
+          });
+          await Promise.all(imagePromises);
         }
 
-        await connection.commit();
+        // Trả về roomId để bên ngoài tiếp tục truy vấn
+        return newRoomId;
+      });
 
-        // Get the created room with images
-        const newRoom = await query(`
-            SELECT r.*, 
-                   GROUP_CONCAT(ri.image_url) as images
-            FROM rooms r
-            LEFT JOIN room_images ri ON r.id = ri.room_id
-            WHERE r.id = ?
-            GROUP BY r.id
-        `, [roomId]);
+      // Sau khi transaction callback hoàn tất (đã commit),
+      // ta có roomId để truy vấn lấy dữ liệu phòng vừa tạo
+      const newRoomRows = await query(
+        `
+          SELECT r.*,
+                 GROUP_CONCAT(ri.image_url) AS images
+          FROM rooms r
+          LEFT JOIN room_images ri ON r.id = ri.room_id
+          WHERE r.id = ?
+          GROUP BY r.id
+        `,
+        [roomId]
+      );
 
-        const roomWithImages = {
-            ...newRoom[0],
-            amenities: newRoom[0].amenities ? JSON.parse(newRoom[0].amenities) : [],
-            images: newRoom[0].images ? newRoom[0].images.split(',') : []
-        };
-
-        res.status(201).json({
-            success: true,
-            message: 'Room created successfully',
-            data: {
-                room: roomWithImages
-            }
+      if (newRoomRows.length === 0) {
+        return res.status(500).json({
+          success: false,
+          message: 'Room created but cannot retrieve data'
         });
+      }
 
+      const raw = newRoomRows[0];
+      const roomWithImages = {
+        ...raw,
+        amenities: raw.amenities ? JSON.parse(raw.amenities) : [],
+        images: raw.images ? raw.images.split(',') : []
+      };
+
+      return res.status(201).json({
+        success: true,
+        message: 'Room created successfully',
+        data: {
+          room: roomWithImages
+        }
+      });
     } catch (error) {
-        await connection.rollback();
-        console.error('Create room error:', error);
-
-        // Delete uploaded files if room creation failed
-        if (req.files) {
-            req.files.forEach(file => {
-                fs.unlink(file.path, (err) => {
-                    if (err) console.error('Error deleting file:', err);
-                });
-            });
-        }
-
-        res.status(500).json({
-            success: false,
-            message: 'Server error while creating room'
+      // Nếu có lỗi trong transaction hoặc truy vấn, Multer đã lưu file, ta cần xóa file đó
+      if (req.files) {
+        req.files.forEach(file => {
+          fs.unlink(file.path, (err) => {
+            if (err) console.error('Error deleting file:', err);
+          });
         });
-    } finally {
-        connection.release();
+      }
+      console.error('Create room error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Server error while creating room'
+      });
     }
-});
+  }
+);
+
+module.exports = router;
 
 // @route   PUT /api/rooms/:id
 // @desc    Update room with images
@@ -465,8 +598,6 @@ router.put('/:id', authenticateToken, requireAdmin, upload.array('images', 10), 
 // @desc    Delete room and its images
 // @access  Admin
 router.delete('/:id', authenticateToken, requireAdmin, commonValidation.id, handleValidationErrors, async (req, res) => {
-    const connection = await transaction();
-    
     try {
         const roomId = req.params.id;
 
@@ -484,23 +615,23 @@ router.delete('/:id', authenticateToken, requireAdmin, commonValidation.id, hand
             });
         }
 
-        // Get room images before deletion
-        const roomImages = await query('SELECT image_url FROM room_images WHERE room_id = ?', [roomId]);
+        // Use transaction properly
+        const result = await transaction(async (connection) => {
+            // Get room images before deletion
+            const roomImages = await query('SELECT image_url FROM room_images WHERE room_id = ?', [roomId], connection);
 
-        // Delete room (CASCADE will delete room_images)
-        const result = await query('DELETE FROM rooms WHERE id = ?', [roomId], connection);
+            // Delete room (CASCADE will delete room_images)
+            const deleteResult = await query('DELETE FROM rooms WHERE id = ?', [roomId], connection);
 
-        if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Room not found'
-            });
-        }
+            if (deleteResult.affectedRows === 0) {
+                throw new Error('Room not found');
+            }
 
-        await connection.commit();
+            return { roomImages, deleteResult };
+        });
 
-        // Delete physical image files
-        roomImages.forEach(img => {
+        // Delete physical image files after successful transaction
+        result.roomImages.forEach(img => {
             const filePath = path.join(__dirname, '..', img.image_url);
             fs.unlink(filePath, (err) => {
                 if (err) console.error('Error deleting image file:', err);
@@ -513,14 +644,19 @@ router.delete('/:id', authenticateToken, requireAdmin, commonValidation.id, hand
         });
 
     } catch (error) {
-        await connection.rollback();
         console.error('Delete room error:', error);
+        
+        if (error.message === 'Room not found') {
+            return res.status(404).json({
+                success: false,
+                message: 'Room not found'
+            });
+        }
+
         res.status(500).json({
             success: false,
             message: 'Server error while deleting room'
         });
-    } finally {
-        connection.release();
     }
 });
 
