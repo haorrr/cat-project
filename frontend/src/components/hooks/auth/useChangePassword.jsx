@@ -3,7 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 
 export function useChangePassword() {
-  const changePassword = async ({ current_password, new_password }) => {
+  const changePassword = async ({ current_password, new_password, two_fa_token }) => {
     try {
       const token = localStorage.getItem("token");
 
@@ -14,7 +14,11 @@ export function useChangePassword() {
           ...(token && { Authorization: `Bearer ${token}` }),
         },
         credentials: "include",
-        body: JSON.stringify({ current_password, new_password }),
+        body: JSON.stringify({ 
+          current_password, 
+          new_password,
+          ...(two_fa_token && { two_fa_token })
+        }),
       });
 
       const data = await res.json();

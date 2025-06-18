@@ -19,6 +19,7 @@ const newsRoutes = require('./routes/news');
 const paymentRoutes = require('./routes/payments');
 const reviewRoutes = require('./routes/reviews');
 const dashboardRoutes = require('./routes/dashboard');
+const twoFARoutes = require('./routes/twoFA'); // Add 2FA routes
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -44,7 +45,7 @@ app.use(cors({
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-2FA-Token'] // Add 2FA token header
 }));
 
 // Rate limiting
@@ -62,9 +63,6 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(path.join(__dirname, 'uploads')));
 
-// Debug middleware cho static files (có thể xóa sau khi test xong)
-
-
 // Room routes TRƯỚC body parsing (vì dùng Multer)
 app.use('/api/rooms', roomRoutes);
 
@@ -80,8 +78,9 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('combined'));
 }
 
-// Các route API khác
+// Các route API
 app.use('/api/auth', authRoutes);
+app.use('/api/2fa', twoFARoutes); // Add 2FA routes
 app.use('/api/users', userRoutes);
 app.use('/api/cats', catRoutes);
 app.use('/api/bookings', bookingRoutes);
@@ -98,7 +97,12 @@ app.get('/api/health', (req, res) => {
     status: 'OK',
     message: 'Pet Care Hotel API is running',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV,
+    features: {
+      '2fa': true,
+      'file_upload': true,
+      'database': true
+    }
   });
 });
 
@@ -163,6 +167,7 @@ const server = app.listen(PORT, () => {
   console.log(`📁 Static files served from: ${path.join(__dirname, 'uploads')}`);
   console.log(`🌐 CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
   console.log(`🖼️ Images accessible at: http://localhost:${PORT}/uploads/rooms/[filename]`);
+  console.log(`🔐 2FA authentication enabled`);
   console.log(`🔍 Test static setup: http://localhost:${PORT}/api/test-static`);
 });
 

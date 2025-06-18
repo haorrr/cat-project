@@ -13,7 +13,7 @@ export function useLogin() {
     isError,
     error,
   } = useMutation({
-    mutationFn: async ({ email, password }) => {
+    mutationFn: async ({ email, password, two_fa_token }) => {
       try {
         const res = await fetch("http://localhost:5000/api/auth/login", {
           method: "POST",
@@ -21,10 +21,21 @@ export function useLogin() {
             "Content-Type": "application/json",
           },
           credentials: "include",
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ 
+            email, 
+            password,
+            ...(two_fa_token && { two_fa_token })
+          }),
         });
 
         const data = await res.json();
+        
+        // If response is successful but requires 2FA
+        if (res.ok && data.requires_2fa) {
+          return data; // Return the data with requires_2fa flag
+        }
+        
+        // If response is not ok, throw error
         if (!res.ok) {
           throw new Error(data.message || "Login failed");
         }
@@ -36,17 +47,28 @@ export function useLogin() {
       }
     },
     onSuccess: (data) => {
-      // Giả sử response trả về { success, message, data: { user, token } }
+      // If 2FA is required, don't proceed with login completion
+      if (data.requires_2fa) {
+        return; // Let the component handle showing 2FA modal
+      }
+
+      // Complete login process
       const { token, user } = data.data;
 
-      // Lưu token vào localStorage (hoặc cookie tùy nhu cầu)
+      // Save token to localStorage
       localStorage.setItem("token", token);
 
-      // Cập nhật cache user nếu có query tương ứng
+      // Update user cache
       queryClient.setQueryData(["currentUser"], user);
 
-      // Chuyển hướng sau khi login thành công
-      router.refresh()
+      // Redirect based on user role
+      if (user.role === 'admin') {
+        router.push('/admin');
+      } else {
+        router.push('/dashboard');
+      }
+      
+      router.refresh();
     },
   });
 
